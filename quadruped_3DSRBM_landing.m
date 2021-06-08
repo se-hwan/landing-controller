@@ -6,10 +6,11 @@
 rmpath(genpath('.')); % clear all previously added paths
 clear; clc; close all;
 
-%% optimization flags
+%% flags
 make_casadi_function = false;
 make_vbl_functions = false;
 show_animation = true;
+run_IK = true;
 
 %% add library paths
 addpath(genpath('casadi/casadi_windows')); % choose appropriate OS
@@ -324,6 +325,7 @@ U_star = sol.value(U);
 q_star(1:6,:) = sol.value(q);
 q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
 
+% post processing of foot positions during flight phases
 for i=1:N-1
     for leg=1:4
         if cs_val(leg,i) == 0
@@ -333,12 +335,9 @@ for i=1:N-1
     end
 end
 
-
-run_IK = true;
 if run_IK
-    % cheeky IK
     for i = 1:N-1
-        [x fval exitflag] = fsolve(@(q) fwd_kin_foot_resid(U_star(1:12,i), model, q_star(1:6,i), q, cs_val(:,i)), q_foot_guess);
+        [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess, cs_val(:,i));
         if exitflag <= 0
             q_star(7:18,i) = q_foot_guess;
         end
