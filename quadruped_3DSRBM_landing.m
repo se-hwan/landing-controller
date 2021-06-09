@@ -38,7 +38,6 @@ cs_val = [repmat([0 0 0 0]', 1, 2) repmat([1 1 0 0]', 1, 3) repmat([1 1 1 1]', 1
 cs_TD_val = zeros(model.NLEGS,N-1);
 
 %% optimization
-
 % Optimization variables
 % q       (6) [x,y,z,roll,pitch,yaw] (floating base state)
 % qdot    (6) [omega (body frame), vBody (world frame)]
@@ -46,20 +45,20 @@ cs_TD_val = zeros(model.NLEGS,N-1);
 % f_grf   (NLEGS*3) (absolute world frame)
 
 opti = casadi.Opti();
-X = opti.variable(12, N);
+X = opti.variable(12, N);               % floating base
 q       = X(1:6,:);
 qdot    = X(7:12,:);
-U = opti.variable(6*model.NLEGS, N-1);
+U = opti.variable(6*model.NLEGS, N-1);  % foot posns + GRFs
 c     = U(1:12,:);
 f_grf = U(13:24,:);
 
 % Optimization Parameters
-Xref = opti.parameter(12, N);
-Uref = opti.parameter(24, N-1);
+Xref = opti.parameter(12, N);       % floating base reference
+Uref = opti.parameter(24, N-1);     % foot posn + GRF reference
 
-cs = opti.parameter(model.NLEGS, N-1);
-cs_TD = opti.parameter(model.NLEGS, N-1);
-dt = opti.parameter(1, N-1);
+cs = opti.parameter(model.NLEGS, N-1);      % contact schedule
+cs_TD = opti.parameter(model.NLEGS, N-1);   % contact schedule at touchdown (?)
+dt = opti.parameter(1, N-1);                % timesteps
 
 q_min = opti.parameter(6,1);q_max = opti.parameter(6,1);
 qd_min = opti.parameter(6,1);qd_max = opti.parameter(6,1);
@@ -70,10 +69,10 @@ c_init = opti.parameter(3*model.NLEGS,1);
 
 q_term_min = opti.parameter(6,1);q_term_max = opti.parameter(6,1);
 qd_term_min = opti.parameter(6,1);qd_term_max = opti.parameter(6,1);
-QX = opti.parameter(12,1);QN = opti.parameter(12,1);
+QX = opti.parameter(12,1);QN = opti.parameter(12,1);    % weighting matrices
 Qc = opti.parameter(3,1);Qf = opti.parameter(3,1);
 
-mu = opti.parameter();
+mu = opti.parameter();          % robot/environment parameters
 l_leg_max = opti.parameter();
 f_max = opti.parameter();
 mass = opti.parameter();
@@ -85,53 +84,41 @@ p_hip = [0.19;-0.1;-0.2;...
          -0.19;-0.1;-0.2;...
          -0.19;0.1;-0.2]; % TODO: make this an opt parameter?
      
-%% Cost function
-cost = casadi.MX(0);
-% Running Cost
-for k = 1:(N-1)
-    % Floating Base Cost
-    X_err = X(:,k) - Xref(:,k);
-    % Foot Position Cost
-    pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);
-    % Ground Reaction Force Cost
-    U_err = U(13:24,k) - Uref(13:24,k);
-    % Sum Cpst
-    cost = cost + (X_err'*diag(QX)*X_err+...
+%% cost function
+cost = casadi.MX(0);             % initialize cost
+for k = 1:(N-1)                  % running cost
+    X_err = X(:,k) - Xref(:,k);                                         % floating base error
+    pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+    U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+    cost = cost + (X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
 end
-% Terminal Cost
-X_err = X(:,end)-Xref(:,end);
+
+X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
-% Sum Costs
-opti.minimize(cost);
 
-%% Initial State
-% Initial state
-opti.subject_to(q(1:6,1) == q_init);
-opti.subject_to(qdot(1:6,1) == qd_init);
-opti.subject_to(c(:,1) == c_init);
+opti.minimize(cost);             % set objective
 
-%% Terminal State
-% Make more complicated constraints
-opti.subject_to(q(:,N) >= q_term_min);
+%% initial state constraint
+opti.subject_to(q(1:6,1) == q_init);        % initial pos + ori
+opti.subject_to(qdot(1:6,1) == qd_init);    % initial ang. vel. + lin. vel.
+opti.subject_to(c(:,1) == c_init);          % initial foot positions
+
+%% terminal state constraints
+opti.subject_to(q(:,N) >= q_term_min);      % bounds terminal state to be within specified min/max values
 opti.subject_to(q(:,N) <= q_term_max);
 opti.subject_to(qdot(:,N) >= qd_term_min);
 opti.subject_to(qdot(:,N) <= qd_term_max);
 
-%% General Constraints
+%% general constraints
 q_leg_home = [0 -1.45 2.65];
 q_home = [0 0 0 0 0 0 q_leg_home q_leg_home q_leg_home q_leg_home]';
 [~,Ibody_val] = get_mass_matrix(model, q_home, 0);
 mass_val = Ibody_val(6,6);
-%inv_Ibody_rot = inv(casadi.MX(Ibody(1:3,1:3)),'symbolicqr');
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
-%inv_Ibody_rot = inv(diag(Ib),'symbolicqr');
 
-for k = 1:N-1
-    
-    % the 'k' suffix indicates the value of the variable at the current
-    % timestep
+for k = 1:N-1               % the 'k' suffix indicates the value of the variable at the current timestep
     qk = q(:,k);
     qdk = qdot(:,k);
     rpyk = q(4:6,k);
@@ -142,7 +129,7 @@ for k = 1:N-1
     R_world_to_body = rpyToRotMat(rpyk(1:3))';
     R_body_to_world = rpyToRotMat(rpyk(1:3));
     
-    % Dynamics
+    % dynamics
     rddot = (1/mass).*sum(reshape(fk,3,model.NLEGS),2)+model.gravity';
     omegaDot = diag(Ib_inv)*...
         (R_world_to_body*(cross(ck(1:3)-qk(1:3),fk(1:3))+...
@@ -151,69 +138,55 @@ for k = 1:N-1
         cross(ck(10:12)-qk(1:3),fk(10:12)))-...
         cross(qdk(1:3),diag(Ib)*qdk(1:3)));
     
-    % Integrate dynamics (forward Euler)
+    % forward euler integration of dynamics
     opti.subject_to(q(1:3,k+1)  - q(1:3,k)  == qdk(4:6) * dt(k));
     opti.subject_to(q(4:6,k+1)  - q(4:6,k)  == Binv(rpyk)*(R_body_to_world*qdk(1:3)) * dt(k));
     opti.subject_to(qdot(4:6,k+1) - qdk(4:6) == rddot * dt(k));
     opti.subject_to(qdot(1:3,k+1) - qdk(1:3) == omegaDot * dt(k));
     
-    % Non-negative GRF
+    % non-negative GRF
     opti.subject_to(fk([3 6 9 12]) >= zeros(4,1));
     
-    % Constrain flight GRF to zero when not in contact, Eq (8a)
+    % constrain flight GRF to zero when not in contact, Eq (8a)
     opti.subject_to(fk([3 6 9 12]) <= csk.*repmat(f_max,4,1));
     
-%     % Contact Constraint - OLD
-%     for leg = 1:model.NLEGS
-%         % Foot on ground when in contact
-%         opti.subject_to(csk(leg)*ck(3*(leg-1)+3) == 0);
-%         if (k > 1)% No slip
-%             stay_on_ground = repmat(csk(leg),3,1);
-%             opti.subject_to(stay_on_ground.*(c(3*(leg-1)+1:3*(leg-1)+3,k-1)-ck(3*(leg-1)+1:3*(leg-1)+3)) == 0);
-%         end
-%         % Kinematic Limits
-%         p_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
-%         leg_length = p_hip-ck(3*(leg-1)+1:3*(leg-1)+3);
-%         opti.subject_to(leg_length'*leg_length <= l_leg_max^2);
-%     end
-    
-    % Contact Constraint - NEW
+    % contact constraints
     R_yaw = rpyToRotMat([0 0 rpyk(3)]);
     for leg = 1:model.NLEGS
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-        % Foot on ground when in contact
-        opti.subject_to(csk(leg)*ck(3*(leg-1)+3) == 0);
-        if (k+1 < N)% No slip
+        opti.subject_to(csk(leg)*ck(3*(leg-1)+3) == 0);     % foot on ground when in contact
+        if (k+1 < N)                                        % no slip
             stay_on_ground = repmat(csk(leg),3,1);
             opti.subject_to(stay_on_ground.*(c(xyz_idx,k+1)-ck(xyz_idx)) == 0);
         end
-        % Kinematic Limits - applied only at touchdown
+        
+        % kinematic Limits - applied only at touchdown
+        % do these account for leg lenghts? or is that left to the timing
+        % of the contact schedule?
         p_hip = qk(1:3) + R_yaw*params.hipSrbmLocation(leg,:)';
-        kin_box_dim = 0.05; % TODO: make a parameter
+        kin_box_dim = 0.05;
         opti.subject_to( cs(leg,k)*(ck(xyz_idx(1)) - (p_hip(1) + kin_box_dim)) <= 0);
         opti.subject_to( cs(leg,k)*(ck(xyz_idx(1)) - (p_hip(1) - kin_box_dim)) >= 0);
         opti.subject_to( cs(leg,k)*(ck(xyz_idx(2)) - (p_hip(2) + kin_box_dim)) <= 0);
         opti.subject_to( cs(leg,k)*(ck(xyz_idx(2)) - (p_hip(2) - kin_box_dim)) >= 0);
     end
-    
-    % Need a box constraint I think, but only for the touchdown...
-    
-    % Friction Constraints, Eq (7k)
+
+    % friction Constraints, Eq (7k)
     opti.subject_to(fk([1 4 7 10]) <= 0.71*mu*fk([3 6 9 12]));
     opti.subject_to(fk([1 4 7 10]) >= -0.71*mu*fk([3 6 9 12]));
     opti.subject_to(fk([2 5 8 11]) <= 0.71*mu*fk([3 6 9 12]));
     opti.subject_to(fk([2 5 8 11]) >= -0.71*mu*fk([3 6 9 12]));
     
-    % State & velocity bounds, Eq (7k)
+    % state & velocity bounds, Eq (7k)
     opti.subject_to(qk <= q_max);
     opti.subject_to(qk >= q_min);
     opti.subject_to(qdk <= qd_max);
     opti.subject_to(qdk >= qd_min);
     
 end
-%% Reference Trajectory Info
+%% reference trajectories
 q_init_val = [0 0 0.4 0 pi/6 0]';
-qd_init_val = [0 0 0.0 1 1 -1]';
+qd_init_val = [0 0 0.0 1 0 -1]';
 
 q_min_val = [-10 -10 -0 -10 -10 -10];
 q_max_val = [10 10 0.4 10 10 10];
@@ -243,7 +216,7 @@ mu_val = 1;
 l_leg_max_val = .3;
 f_max_val = 200;
 
-%% Set Parameter Values
+%% set parameter values
 for i = 1:6
     Xref_val(i,:)   = linspace(q_init_val(i),q_term_ref(i),N);
     Xref_val(6+i,:) = linspace(qd_init_val(i),qd_term_ref(i),N);
@@ -275,10 +248,10 @@ opti.set_value(mass,mass_val);
 opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
-%% Initial Guess
+%% initial guess
 opti.set_initial([X(:);U(:)],[Xref_val(:);Uref_val(:)]);
 
-%% Setup Casadi and Ipopt Options
+%% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
 s_opts = struct('max_iter',3000,...
     'max_cpu_time',9.0,...
@@ -315,17 +288,17 @@ s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
 
-%% Solve with Opti Stack
+%% solve
 disp_box('Solving with Opti Stack');
 sol = opti.solve_limited();
 
-%% Decompose Solution
+%% partition solution
 X_star = sol.value(X);
 U_star = sol.value(U);
 q_star(1:6,:) = sol.value(q);
 q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
 
-% post processing of foot positions during flight phases
+% post processing of foot positions during flight for inverse kinematics
 for i=1:N-1
     for leg=1:4
         if cs_val(leg,i) == 0
@@ -335,6 +308,7 @@ for i=1:N-1
     end
 end
 
+% inverse kinematics, if called
 if run_IK
     for i = 1:N-1
         [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess, cs_val(:,i));
