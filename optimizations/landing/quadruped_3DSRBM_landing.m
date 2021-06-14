@@ -13,13 +13,9 @@ show_animation = true;
 run_IK = true;
 
 %% add library paths
-addpath(genpath('casadi/casadi_windows')); % choose appropriate OS
-% addpath(genpath('casadi/casadi_linux'));
-addpath(genpath('spatial_v2'));
-addpath(genpath('dynamics-gen'));
-addpath(genpath('dynamics-utilities'));
-addpath(genpath('srbm-utilities'));
-addpath(genpath('misc'));
+% addpath(genpath('../../utilities/casadi/casadi_windows')); % may need to specify os directory
+% addpath(genpath('../../utilities/casadi/casadi_linux'));
+addpath(genpath('../../utilities'));
 import casadi.*
 
 %% build robot model
@@ -32,8 +28,6 @@ model  = buildShowMotionModelMC3D(params, model, 0);
 N = 16; % N = 11
 T = 0.5; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
-cs_val = ones(model.NLEGS,N-1);
-cs_val = [repmat([1 1 0 0]', 1, N-10) repmat([1 1 1 1]', 1, 9)];
 cs_val = [repmat([0 0 0 0]', 1, 2) repmat([1 1 0 0]', 1, 3) repmat([1 1 1 1]', 1, 10)];
 cs_TD_val = zeros(model.NLEGS,N-1);
 
@@ -119,6 +113,7 @@ mass_val = Ibody_val(6,6);
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 
 for k = 1:N-1               % the 'k' suffix indicates the value of the variable at the current timestep
+    
     qk = q(:,k);
     qdk = qdot(:,k);
     rpyk = q(4:6,k);
@@ -186,7 +181,7 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 %% reference trajectories
 q_init_val = [0 0 0.4 0 pi/6 0]';
-qd_init_val = [0 0 0.0 1 0 -1]';
+qd_init_val = [0 0 0.0 1 1 -1]';
 
 q_min_val = [-10 -10 -0 -10 -10 -10];
 q_max_val = [10 10 0.4 10 10 10];
@@ -253,8 +248,13 @@ opti.set_initial([X(:);U(:)],[Xref_val(:);Uref_val(:)]);
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
-s_opts = struct('max_iter',3000,...
-    'max_cpu_time',9.0,...
+% experimental: discrete formulation of contact state
+% p_opts.discrete = [zeros(12*N, 1);                  % floating base state, continuous
+%                    zeros(6*model.NLEGS*(N-1),1);    % foot position + GRFS, continuous
+%                    ones(model.NLEGS*(N-1), 1)];     % contact state, discrete
+
+
+s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'tol', 1e-4,... % (1e-6), 1e-4 works well
     'acceptable_tol', 1e-4,... % (1e-4)
     'constr_viol_tol', 1e-3,... % (1e-6), 1e3 works well
@@ -286,7 +286,7 @@ s_opts.file_print_level = 0;
 s_opts.print_level = 3;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
-opti.solver('ipopt',p_opts,s_opts);
+opti.solver('bonmin',p_opts,s_opts);
 
 %% solve
 disp_box('Solving with Opti Stack');
