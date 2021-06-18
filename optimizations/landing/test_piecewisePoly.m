@@ -76,13 +76,23 @@ end
 opti.subject_to(sum(timeDuration) == 10);
 
 % initial condition
-opti.subject_to(f(0*current_time - eps) == 5);
+opti.subject_to(f(0*current_time - eps) == -5);
 c_test = coeff(:,1);
 c_test_dot = [3*c_test(1)^2 2*c_test(2) c_test(3)];
-opti.subject_to(c_test_dot == 1);
+opti.subject_to(c_test_dot == -1);
 
 % final condition
-opti.subject_to(f(sum(timeDuration(:)) + eps) == 10);
+opti.subject_to(f(sum(timeDuration(:)) + eps) == -10);
+
+
+cost = casadi.MX(0);
+for i=1:4
+    for j = 1:4
+        cost = cost + coeff(i,j)^2;
+    end
+end
+
+opti.minimize(cost);
 
 opti.solver('ipopt');
 
