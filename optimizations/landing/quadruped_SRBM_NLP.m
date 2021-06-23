@@ -13,9 +13,10 @@ show_animation = true;
 run_IK = true;
 
 %% add library paths
-% addpath(genpath('../../utilities/casadi/casadi_windows')); % may need to specify os directory
+% may need to specify os directory
+% addpath(genpath('../../utilities/casadi/casadi_windows'));
 % addpath(genpath('../../utilities/casadi/casadi_linux'));
-addpath(genpath('../../utilities'));
+addpath(genpath('../../utilities_general'));
 import casadi.*
 
 %% build robot model
