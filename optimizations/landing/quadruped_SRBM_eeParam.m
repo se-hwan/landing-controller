@@ -27,12 +27,12 @@ model  = buildShowMotionModelMC3D(params, model, 0);
 %% problem parameters and setup
 
 dt_dyn_val = 0.1;                                               % timestep for dynamics
-dt_baseSpline = 0.2;                                        % duration of polynomials for base motion
-T_val = 1.0;                                                % total time
-N_baseSpline = round(T_val/dt_baseSpline);                  % number of polynomials for base
+dt_baseSpline = 0.2;                                            % duration of polynomials for base motion
+T_val = 0.6;                                                    % total time
+N_baseSpline = round(T_val/dt_baseSpline);                      % number of polynomials for base
 N_timesteps = round(T_val/dt_dyn_val + 1);                      % number of steps for dynamics
-phase_durations_base = dt_baseSpline*ones(1,N_baseSpline);  % durations of base splines
-eps = 1e-3;                                                 % small change in time to register changes bw polynomial sets
+phase_durations_base = dt_baseSpline*ones(1,N_baseSpline);      % durations of base splines
+eps = 1e-3;                                                     % small change in time to register changes bw polynomial sets
 
 % contact sequence specification
 % num contact phases, num flight phases, order (1 to begin in contact, 0 to begin in flight)
@@ -105,7 +105,7 @@ p = cell(model.NLEGS, 1);
 p_ref = p;
 for i = 1:model.NLEGS % n contact points
     for j = 1:3 % xyz indices
-        p{i}{j} = opti.variable(4, length(contactState_posns{i})); % x0, x0_dot, x1, x1_dot, 3 splines for each contact phase
+        p{i}{j} = opti.variable(4, length(contactState_posns{i})); % x0, x0_dot, x1, x1_dot, 2 splines for each swing phase
         p_ref{i}{j} = ones(4, length(contactState_posns{i}));
     end
 end
@@ -211,7 +211,7 @@ mass_val = Ibody_val(6,6);
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 
 for k = 1:N_timesteps-1
-    t_k = k*dt_dyn;                                     % current time
+    t_k = k*dt_dyn;                                 % current time
     f_k = casadi.MX.zeros(model.NLEGS, 3);          % current foot forces
     p_k = casadi.MX.zeros(model.NLEGS, 3);          % current foot positions
     
@@ -227,6 +227,7 @@ for k = 1:N_timesteps-1
     
     % non-negative GRF
     opti.subject_to(f_k([3 6 9 12]) >= zeros(4,1));
+    opti.subject_to(f_k([3 6 9 12]) <= repmat(f_max,4,1));
     
     % friction Constraints, Eq (7k)
     opti.subject_to(f_k([1 4 7 10]) <= 0.71*mu*f_k([3 6 9 12]));
@@ -267,9 +268,9 @@ for k = 1:N_timesteps-1
         cross(p_k(10:12) - r_k(1:3), f_k(10:12)))-...
         cross(R_world_to_body*omega_k(1:3), diag(Ib)*(R_world_to_body*omega_k(1:3))));
     
-    opti.subject_to(rDDot_k == rddot);
-    opti.subject_to(omegaDot_k == omegaDot);
-        
+%     opti.subject_to(rDDot_k == rddot);
+%     opti.subject_to(omegaDot_k == omegaDot);
+
     % kinematic constraints
     for leg = 1:model.NLEGS
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
@@ -279,8 +280,8 @@ for k = 1:N_timesteps-1
         opti.subject_to((p_k(xyz_idx(1)) - (p_hip(1) - kin_box_dim)) >= 0);
         opti.subject_to((p_k(xyz_idx(2)) - (p_hip(2) + kin_box_dim)) <= 0);
         opti.subject_to((p_k(xyz_idx(2)) - (p_hip(2) - kin_box_dim)) >= 0);
-        opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) + kin_box_dim)) <= 0);
-        opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) - kin_box_dim)) >= 0);
+        opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) + 0.375)) <= 0);
+        %opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) - 0.375)) >= 0);
     end
 end
 
@@ -316,7 +317,6 @@ for leg = 1:model.NLEGS
 end
 
 %% optimization - set parameters
-
 theta_init_val = zeros(3,1);
 theta_des_val = zeros(3,1);
 r_init_val = [0 0 0.3]';
@@ -381,6 +381,11 @@ for i = 1:model.NLEGS
     N_phases = length(phase_durations{i});
     opti.set_initial(phase_durations{i}, (T_val/N_phases)*ones(1, N_phases));
 end
+for i = 1:N_baseSpline
+    opti.set_initial(com_x(5,i), r_init_val(3));
+    opti.set_initial(com_y(5,i), r_init_val(3));
+    opti.set_initial(com_z(5,i), r_init_val(3));
+end
 
 opti.solver('ipopt', struct(), s_opts);
 
@@ -423,11 +428,10 @@ for i = 1:length(t_star)
     for legs = 1:model.NLEGS
         for xyz = 1:3
             f_star_eval{legs}(xyz, i) = evaluateSpline(f_star{legs}{xyz}, contactDurations_force_star{legs}, t_star(i), 'Hermite');
+            p_star_eval{legs}(xyz, i) = evaluateSpline(p_star{legs}{xyz}, contactDurations_posn_star{legs}, t_star(i), 'Hermite');
         end
     end
 end
-
-
 
 %% visualization and plots
 
@@ -442,12 +446,21 @@ ylabel('Posn (m)')
 
 figure;
 hold on;
-plot(t_star, f_star_eval{1}(3, :), 'r--')
+plot(t_star, f_star_eval{1}(1, :), 'r--')
+plot(t_star, f_star_eval{1}(2, :), 'g--')
+plot(t_star, f_star_eval{1}(3, :), 'b--')
+legend('F_{FR, x}','F_{FR, y}','F_{FR, z}')
 xlabel('Time (s)')
 ylabel('Force (N)')
 
-
-
+figure;
+hold on;
+plot(t_star, p_star_eval{1}(1, :), 'r--')
+plot(t_star, p_star_eval{1}(2, :), 'g--')
+plot(t_star, p_star_eval{1}(3, :), 'b--')
+legend('x_{FR}','y_{FR}','z_{FR}')
+xlabel('Time (s)')
+ylabel('Posn (m)')
 
 fb_motion = [q_star_eval; repmat(repmat(q_leg_home', 4, 1),1,length(t_star))];
 if show_animation
