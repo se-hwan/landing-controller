@@ -179,6 +179,7 @@ for i = 1:model.NLEGS
         end 
     end
     opti.subject_to(sum(phase_durations{i}) == T);          % phase durations must sum to total time
+    opti.subject_to(phase_durations{i} >= 0);               % phase durations must be positive
 end
 
 % do I need to link the phase_durations with the spline contact states more
@@ -196,6 +197,9 @@ theta_0 = [polyval(roll(:, 1), 0); polyval(pitch(:, 1), 0); polyval(yaw(:, 1), 0
 
 opti.subject_to(r_0 == r_init);
 opti.subject_to(theta_0 == theta_init);
+for i = 1:model.NLEGS
+    opti.subject_to(evalSpline_footForces{i, 3}.x(dt_dyn*0 - eps) >= 0);
+end
 
 %% final state constraints
 r_T = [polyval(com_x(:, end), T); polyval(com_y(:, end), T); polyval(com_z(:, end), T)];
@@ -268,21 +272,20 @@ for k = 1:N_timesteps-1
         cross(p_k(10:12) - r_k(1:3), f_k(10:12)))-...
         cross(R_world_to_body*omega_k(1:3), diag(Ib)*(R_world_to_body*omega_k(1:3))));
     
-%     opti.subject_to(rDDot_k == rddot);
+    opti.subject_to(rDDot_k == rddot);
 %     opti.subject_to(omegaDot_k == omegaDot);
 
-    % kinematic constraints
-    for leg = 1:model.NLEGS
-        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-        p_hip = r_k + R_body_to_world*params.hipSrbmLocation(leg,:)';
-        kin_box_dim = 0.075;
-        opti.subject_to((p_k(xyz_idx(1)) - (p_hip(1) + kin_box_dim)) <= 0);
-        opti.subject_to((p_k(xyz_idx(1)) - (p_hip(1) - kin_box_dim)) >= 0);
-        opti.subject_to((p_k(xyz_idx(2)) - (p_hip(2) + kin_box_dim)) <= 0);
-        opti.subject_to((p_k(xyz_idx(2)) - (p_hip(2) - kin_box_dim)) >= 0);
-        opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) + 0.375)) <= 0);
-        %opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) - 0.375)) >= 0);
-    end
+%     % kinematic constraints
+%     for leg = 1:model.NLEGS
+%         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+%         p_hip = r_k + R_body_to_world*params.hipSrbmLocation(leg,:)';
+%         kin_box_dim = 0.075;
+%         opti.subject_to((p_k(xyz_idx(1)) - (p_hip(1) + kin_box_dim)) <= 0);
+%         opti.subject_to((p_k(xyz_idx(1)) - (p_hip(1) - kin_box_dim)) >= 0);
+%         opti.subject_to((p_k(xyz_idx(2)) - (p_hip(2) + kin_box_dim)) <= 0);
+%         opti.subject_to((p_k(xyz_idx(2)) - (p_hip(2) - kin_box_dim)) >= 0);
+%         % opti.subject_to((p_k(xyz_idx(3)) - (p_hip(3) + 0.375)) >= 0);
+%     end
 end
 
 %% continuity constraints
@@ -292,8 +295,8 @@ for i = 1:N_baseSpline
     for xyz = 1:3
         opti.subject_to(evalSpline_comPosn{xyz}.x(t_cont - eps) == evalSpline_comPosn{xyz}.x(t_cont + eps));
         opti.subject_to(evalSpline_comOri{xyz}.x(t_cont - eps) == evalSpline_comOri{xyz}.x(t_cont + eps));
-        opti.subject_to(evalSpline_comPosn{xyz}.x_ddot(t_cont - eps) == evalSpline_comPosn{xyz}.x_ddot(t_cont + eps));
-        opti.subject_to(evalSpline_comOri{xyz}.x_ddot(t_cont - eps) == evalSpline_comOri{xyz}.x_ddot(t_cont + eps));
+        %opti.subject_to(evalSpline_comPosn{xyz}.x_ddot(t_cont - eps) == evalSpline_comPosn{xyz}.x_ddot(t_cont + eps));
+        %opti.subject_to(evalSpline_comOri{xyz}.x_ddot(t_cont - eps) == evalSpline_comOri{xyz}.x_ddot(t_cont + eps));
     end
 end
 
@@ -438,7 +441,7 @@ end
 figure;
 hold on;
 plot(t_star, q_star_eval(1,:), 'r--')
-plot(t_star, q_star_eval(2,:), 'g--')
+%plot(t_star, q_star_eval(2,:), 'g--')
 plot(t_star, q_star_eval(3,:), 'b--')
 legend('x', 'y', 'z')
 xlabel('Time (s)')
@@ -446,12 +449,13 @@ ylabel('Posn (m)')
 
 figure;
 hold on;
-plot(t_star, f_star_eval{1}(1, :), 'r--')
-plot(t_star, f_star_eval{1}(2, :), 'g--')
-plot(t_star, f_star_eval{1}(3, :), 'b--')
-legend('F_{FR, x}','F_{FR, y}','F_{FR, z}')
+plot(t_star, f_star_eval{1}(3, :), 'r--')
+plot(t_star, f_star_eval{2}(3, :), 'g--')
+plot(t_star, f_star_eval{3}(3, :), 'b--')
+plot(t_star, f_star_eval{4}(3, :), 'k--')
+legend('FR', 'FL', 'BR', 'BL')
 xlabel('Time (s)')
-ylabel('Force (N)')
+ylabel('F_z (N)')
 
 figure;
 hold on;
@@ -464,7 +468,7 @@ ylabel('Posn (m)')
 
 fb_motion = [q_star_eval; repmat(repmat(q_leg_home', 4, 1),1,length(t_star))];
 if show_animation
-    % showmotion(model,t_star,fb_motion)
+    showmotion(model,t_star,fb_motion)
 end
 
 
