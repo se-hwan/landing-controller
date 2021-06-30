@@ -30,17 +30,17 @@ N_timesteps = round(T_val/dt_dyn + 1);                      % number of steps fo
 dt_base = 0.2;                                              % duration of polynomials for base motion
 N_base = round(T_val/dt_base);                              % number of polynomials for base
 time_base = zeros(1, N_base + 1);                           % time breakpoints of base piecewise polynomial
-order_base = 5;                                             % polynomial order of base splines
+order_base = 4;                                             % polynomial order of base splines
 for i = 1: N_base
     time_base(i + 1) = dt_base*i;
 end
 
 % contact sequence specification
 % [# contact phases, # flight phases, begin_in_contact (1 or 0)]
-contactPhases = [2 2 0;         % FR foot  
-                 2 2 1;         % FL foot
-                 2 2 1;         % BR foot
-                 2 2 0];        % BL foot
+contactPhases = [1 1 0;         % FR foot  
+                 1 1 1;         % FL foot
+                 1 1 1;         % BR foot
+                 1 1 0];        % BL foot
 contactSequence = generateContactSequence(contactPhases);   % contact sequence for legs
 contactState_forces = cell(model.NLEGS, 1);                 % contact state for force splines
 contactState_posns = cell(model.NLEGS, 1);                  % contact state for posn splines
@@ -87,14 +87,14 @@ for i = 1:model.NLEGS
         if (contactSequence{i}(j) == 0)
             % not in contact
             temp_forces = [temp_forces 0];
-            temp_posns = [temp_posns 0 0];
+            temp_posns = [temp_posns zeros(1, N_splines_stance)];
             temp_f_dur = [temp_f_dur phaseDurations{i}(j)];
-            temp_p_dur = [temp_p_dur ones(1,2)*(phaseDurations{i}(j)/N_splines_swing)];
+            temp_p_dur = [temp_p_dur ones(1,N_splines_swing)*(phaseDurations{i}(j)/N_splines_swing)];
         else
             % in contact
             temp_forces = [temp_forces ones(1, 3)];
             temp_posns = [temp_posns 1];
-            temp_f_dur = [temp_f_dur ones(1,3)*(phaseDurations{i}(j)/N_splines_stance)];
+            temp_f_dur = [temp_f_dur ones(1,N_splines_stance)*(phaseDurations{i}(j)/N_splines_stance)];
             temp_p_dur = [temp_p_dur phaseDurations{i}(j)];
         end
     end
@@ -180,7 +180,7 @@ for leg = 1:model.NLEGS
             opti.subject_to(nodes_posn{leg}.y(j,1) == nodes_posn{leg}.y(j,3));
             opti.subject_to(nodes_posn{leg}.z(j,:) == zeros(1, 4));
         else
-            % constraint on swing height? ideally not needed.
+            opti.subject_to(nodes_posn{leg}.z(j,:) >= zeros(1, 4));
         end        
     end
     opti.subject_to(sum(phaseDurations{leg}) == T);               % phase durations of legs sum to total time
@@ -348,26 +348,26 @@ for k = 1:N_timesteps-1
         cross(R_world_to_body*omega_k(1:3), diag(Ib)*(R_world_to_body*omega_k(1:3))));
     
     opti.subject_to(rDDot_k == rddot);
-%     opti.subject_to(omegaDot_k == omegaDot);
+    opti.subject_to(omegaDot_k == omegaDot);
     
-%     for leg = 1:model.NLEGS
-%         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-%         
-%         % kinematic Limits - applied only at touchdown
-%         % do these account for leg lenghts? or is that left to the timing
-%         % of the contact schedule?
-%         
-%         r_hip = r_k(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
-%         p_rel = R_world_to_body*(p_k(xyz_idx) - r_hip);
-%         kin_box_x = 0.05;
-%         kin_box_y = 0.05;
-%         kin_box_z = 0.30;
-%         
-%         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
-%         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
-%         opti.subject_to(-kin_box_x <= p_rel(3) + 0.05 <= 0)
-%         
-%     end
+    for leg = 1:model.NLEGS
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        
+        % kinematic Limits - applied only at touchdown
+        % do these account for leg lenghts? or is that left to the timing
+        % of the contact schedule?
+        
+        r_hip = r_k(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
+        p_rel = R_world_to_body*(p_k(xyz_idx) - r_hip);
+        kin_box_x = 0.05;
+        kin_box_y = 0.05;
+        kin_box_z = 0.30;
+        
+        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
+        opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
+        opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0)
+        
+    end
 
 end
 
@@ -529,7 +529,7 @@ legend('F_x', 'F_y', 'F_z')
 hold off
 
 figure;
-pp_p = mkpp(sol.value(time_posn{1}), p_star{3, 1});
+pp_p = mkpp(sol.value(time_posn{2}), p_star{3, 2});
 plot(time_eval, ppval(pp_p, time_eval));
 
 %% visualization

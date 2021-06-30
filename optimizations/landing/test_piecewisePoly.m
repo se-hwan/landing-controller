@@ -58,6 +58,10 @@ opti.set_value(current_time, dt)
 v = casadi.MX.sym('v', 1, 1);
 
 breaks = [0 timeDuration(1) sum(timeDuration(1:2)) sum(timeDuration(1:3)) sum(timeDuration(1:4))];
+breaks = casadi.MX.zeros(1, 5);
+for i = 1:4
+    breaks(i + 1) = sum(timeDuration(1:i));
+end
 L = low(breaks, v) + 1;
 
 current_poly = coeff(:, L);
@@ -69,33 +73,47 @@ f = casadi.Function('f', {v}, {res});
 t = 0;
 eps = 0.0001;
 
+
 for i = 1:3
-    opti.subject_to(f(sum(timeDuration(1:i)) - eps) == f(sum(timeDuration(1:i)) + eps));
+    opti.subject_to(polyval(coeff(i, :)', timeDuration(i)) == polyval(coeff(i+1, :)', 0))
+    opti.subject_to(polyval(getDerivCoef(coeff(i, :))', timeDuration(i)) == polyval(getDerivCoef(coeff(i+1, :))', 0))
 end
+dt_sym = opti.parameter(1,1); opti.set_value(dt_sym, 0.5);
+for i = 1:N
+    t = dt_sym*i;
+    current_idx = idx(t);
+    opti.subject_to(coeff(current_idx, :) <= 1*ones(1,4));
+end
+
+% for i = 1:3
+%     opti.subject_to(f(sum(timeDuration(1:i)) - eps) == f(sum(timeDuration(1:i)) + eps));
+% end
 
 opti.subject_to(sum(timeDuration) == 10);
 
 % initial condition
-opti.subject_to(f(0*current_time - eps) == -5);
+%opti.subject_to(f(0*current_time - eps) == -5);
+opti.subject_to(polyval(coeff(1, :)', 0) == -5)
 
-opti.subject_to(f(5*current_time) >= 2);
-opti.subject_to(coeff(4,3) == timeDuration(3))
+opti.subject_to(polyval(coeff(end, :)', timeDuration(end)) == 0);
+%opti.subject_to(coeff(4,3) == timeDuration(3))
+
+
 
 % final condition
-opti.subject_to(f(sum(timeDuration(:)) + eps) == -10);
+%opti.subject_to(f(sum(timeDuration(:)) + eps) == -10);
 for i = 1:length(timeDuration)
     opti.subject_to(timeDuration(i) >= 0.5)
 end
 
 
-cost = casadi.MX(0);
-for i=1:4
-    for j = 1:4
-        cost = cost + coeff(i,j)^2;
-    end
-end
-
-%opti.minimize(cost);
+% cost = casadi.MX(0);
+% for i=1:4
+%     for j = 1:4
+%         cost = cost + coeff(i,j)^2;
+%     end
+% end
+% opti.minimize(cost);
 
 opti.solver('ipopt');
 
@@ -107,24 +125,6 @@ c_star = sol.value(coeff)
 duration_star = sol.value(timeDuration)
 t_star = [0 duration_star(1) sum(duration_star(1:2)) sum(duration_star(1:3)) sum(duration_star(1:4))]
 
-
-
-v = casadi.MX.sym('v', 1, 1);
-
-breaks_star = t_star;
-L_star = low(breaks_star, v) + 1;
-
-c_star_casadi = casadi.MX(c_star);
-current_poly = c_star_casadi(:, L_star);
-
-res = dot(current_poly, [v.^[poly_order:-1:0]]');
-idx_star = casadi.Function('idx_star',{v},{L_star});
-f_star = casadi.Function('f_star', {v}, {res});
-
-
-hold on;
-t_test = 1.9783:0.01:4.6522;
-t_test = 0:0.01:10;
-plot_test = full(f_star(t_test));
-plot(t_test, plot_test)
-
+pp = mkpp(t_star, c_star);
+time_eval = 0:0.01:10;
+plot(time_eval, ppval(pp, time_eval))

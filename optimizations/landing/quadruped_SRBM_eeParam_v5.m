@@ -30,17 +30,17 @@ N_timesteps = round(T_val/dt_dyn + 1);                      % number of steps fo
 dt_base = 0.2;                                              % duration of polynomials for base motion
 N_base = round(T_val/dt_base);                              % number of polynomials for base
 time_base = zeros(1, N_base + 1);                           % time breakpoints of base piecewise polynomial
-order_base = 5;                                             % polynomial order of base splines
+order_base = 4;                                             % polynomial order of base splines
 for i = 1: N_base
     time_base(i + 1) = dt_base*i;
 end
 
 % contact sequence specification
 % [# contact phases, # flight phases, begin_in_contact (1 or 0)]
-contactPhases = [2 2 0;         % FR foot  
-                 2 2 1;         % FL foot
-                 2 2 1;         % BR foot
-                 2 2 0];        % BL foot
+contactPhases = [1 0 1;         % FR foot  
+                 1 0 1;         % FL foot
+                 1 0 1;         % BR foot
+                 1 0 1];        % BL foot
 contactSequence = generateContactSequence(contactPhases);   % contact sequence for legs
 contactState_forces = cell(model.NLEGS, 1);                 % contact state for force splines
 contactState_posns = cell(model.NLEGS, 1);                  % contact state for posn splines
@@ -87,14 +87,14 @@ for i = 1:model.NLEGS
         if (contactSequence{i}(j) == 0)
             % not in contact
             temp_forces = [temp_forces 0];
-            temp_posns = [temp_posns 0 0];
+            temp_posns = [temp_posns zeros(1, N_splines_swing)];
             temp_f_dur = [temp_f_dur phaseDurations{i}(j)];
-            temp_p_dur = [temp_p_dur ones(1,2)*(phaseDurations{i}(j)/N_splines_swing)];
+            temp_p_dur = [temp_p_dur ones(1,N_splines_swing)*(phaseDurations{i}(j)/N_splines_swing)];
         else
             % in contact
-            temp_forces = [temp_forces ones(1, 3)];
+            temp_forces = [temp_forces ones(1, N_splines_stance)];
             temp_posns = [temp_posns 1];
-            temp_f_dur = [temp_f_dur ones(1,3)*(phaseDurations{i}(j)/N_splines_stance)];
+            temp_f_dur = [temp_f_dur ones(1,N_splines_stance)*(phaseDurations{i}(j)/N_splines_stance)];
             temp_p_dur = [temp_p_dur phaseDurations{i}(j)];
         end
     end
@@ -122,10 +122,10 @@ for leg = 1:model.NLEGS
     nodes_posn{leg}.cs = contactState_posns{leg};
     
     for i = 1:numel(contactState_forces{leg})
-        time_force{leg}(1, i + 1) = sum(contactDuration_forces{leg}(1:i));
+        time_force{leg}(i + 1) = sum(contactDuration_forces{leg}(1:i));
     end
     for j = 1:numel(contactState_posns{leg})
-        time_posn{leg}(1, j + 1) = sum(contactDuration_forces{leg}(1:j));
+        time_posn{leg}(j + 1) = sum(contactDuration_forces{leg}(1:j));
     end
     
 end
@@ -177,17 +177,22 @@ for leg = 1:model.NLEGS
     for j = 1:numel(nodes_posn{leg}.cs)
         if (nodes_posn{leg}.cs(j) == 1)
             opti.subject_to(nodes_posn{leg}.x(j,1) == nodes_posn{leg}.x(j,3));
+            % opti.subject_to(nodes_posn{leg}.x(j,2) == 0); opti.subject_to(nodes_posn{leg}.x(j,4) == 0);
             opti.subject_to(nodes_posn{leg}.y(j,1) == nodes_posn{leg}.y(j,3));
+            % opti.subject_to(nodes_posn{leg}.y(j,2) == 0); opti.subject_to(nodes_posn{leg}.y(j,4) == 0);
             opti.subject_to(nodes_posn{leg}.z(j,:) == zeros(1, 4));
         else
-            % constraint on swing height? ideally not needed.
+            opti.subject_to(nodes_posn{leg}.z(j,:) >= zeros(1, 4));
         end        
     end
     opti.subject_to(sum(phaseDurations{leg}) == T);               % phase durations of legs sum to total time
     for k = 1:numel(contactSequence{leg})
-        opti.subject_to(0.25 <= phaseDurations{leg}(k) <= T);        % phase durations must be positive and bounded
+        opti.subject_to(0.1 <= phaseDurations{leg}(k) <= T);        % phase durations must be positive and bounded
     end
 end
+
+f_1 = [nodes_force{leg}.x(end, 3); nodes_force{leg}.y(end, 3); nodes_force{leg}.z(end, 3)]; % x1 of xyz force spline
+opti.subject_to(f_max >= f_1(3) >= 0);
 
 %% optimization - constraints
 
@@ -289,6 +294,17 @@ q_home = [0 0 0 0 0 0 q_leg_home q_leg_home q_leg_home q_leg_home]';
 mass_val = Ibody_val(6,6);
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 
+
+splineIndexFcns_force = cell(model.NLEGS, 1);
+splineIndexFcns_posn = cell(model.NLEGS, 1);
+for i = 1:model.NLEGS
+    indexFunction_force = generateIndexFunction(time_force{leg});
+    indexFunction_posn = generateIndexFunction(time_posn{leg});
+    splineIndexFcns_force{i} = indexFunction_force;
+    splineIndexFcns_posn{i} = indexFunction_posn;
+end
+
+
 for k = 1:N_timesteps-1
     t_global = k*dt_dyn;                                 % current time
     t_global_test = k*dt_test;
@@ -299,8 +315,11 @@ for k = 1:N_timesteps-1
     p_k = casadi.MX.zeros(3*model.NLEGS, 1);
 
     for leg = 1:model.NLEGS
-        f_idx = full(getSplineIndex(time_force{leg}, t_global_test));
-        p_idx = full(getSplineIndex(time_posn{leg}, t_global_test));
+        f_idx = splineIndexFcns_force{leg}(t_global_test);
+        p_idx = splineIndexFcns_posn{leg}(t_global_test);
+
+%         f_idx = full(getSplineIndex(time_force{leg}, t_global_test));
+%         p_idx = full(getSplineIndex(time_posn{leg}, t_global_test));
         
         t_local_f = t_global - time_force{leg}(f_idx);
         f_k(3*(leg-1) + 1) = polyval(convertHermiteCoef(nodes_force{leg}.x(f_idx, :), nodes_force{leg}.duration(f_idx))', t_local_f);
@@ -348,26 +367,26 @@ for k = 1:N_timesteps-1
         cross(R_world_to_body*omega_k(1:3), diag(Ib)*(R_world_to_body*omega_k(1:3))));
     
     opti.subject_to(rDDot_k == rddot);
-%     opti.subject_to(omegaDot_k == omegaDot);
+    opti.subject_to(omegaDot_k == omegaDot);
     
-%     for leg = 1:model.NLEGS
-%         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-%         
-%         % kinematic Limits - applied only at touchdown
-%         % do these account for leg lenghts? or is that left to the timing
-%         % of the contact schedule?
-%         
-%         r_hip = r_k(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
-%         p_rel = R_world_to_body*(p_k(xyz_idx) - r_hip);
-%         kin_box_x = 0.05;
-%         kin_box_y = 0.05;
-%         kin_box_z = 0.30;
-%         
-%         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
-%         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
-%         opti.subject_to(-kin_box_x <= p_rel(3) + 0.05 <= 0)
-%         
-%     end
+    for leg = 1:model.NLEGS
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        
+        % kinematic Limits - applied only at touchdown
+        % do these account for leg lenghts? or is that left to the timing
+        % of the contact schedule?
+        
+        r_hip = r_k(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
+        p_rel = R_world_to_body*(p_k(xyz_idx) - r_hip);
+        kin_box_x = 0.05;
+        kin_box_y = 0.05;
+        kin_box_z = 0.30;
+        
+        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
+        opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
+        opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0)
+        
+    end
 
 end
 
@@ -412,20 +431,19 @@ for leg = 1:model.NLEGS
             opti.set_initial(nodes_force{leg}.z(i, 1), 20);
         end
     end
-    for j = 1:numel(nodes_posn{leg}.cs)
-            opti.set_initial(nodes_posn{leg}.z(j, 1), 0.);
-
-    end
+%     for j = 1:numel(nodes_posn{leg}.cs)
+%             opti.set_initial(nodes_posn{leg}.z(j, 1), 0.);
+%     end
 end
 
-cost = casadi.MX(0);
-for leg=1:model.NLEGS
-    for i = 1:numel(nodes_force{leg}.cs)
-        coeff = dot(nodes_force{leg}.x(i, :), nodes_force{leg}.x(i, :));
-        cost = cost + coeff^2;
-    end
-end
-opti.minimize(cost);
+% cost = casadi.MX(0);
+% for leg=1:model.NLEGS
+%     for i = 1:numel(nodes_force{leg}.cs)
+%         coeff = dot(nodes_force{leg}.x(i, :), nodes_force{leg}.x(i, :));
+%         cost = cost + coeff^2;
+%     end
+% end
+% opti.minimize(cost);
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -459,7 +477,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
 
 s_opts.file_print_level = 2;
 s_opts.print_level = 4;
-s_opts.print_frequency_iter = 100;
+s_opts.print_frequency_iter = 10;
 s_opts.print_timing_statistics ='no';
 
 
@@ -490,8 +508,7 @@ end
 
 f_star = cell(3, model.NLEGS);
 p_star = cell(3, model.NLEGS);
-dur_f = cell(model.NLEGS, 1);
-dur_p = cell(model.NLEGS, 1);
+phaseDuration_star = cell(model.NLEGS, 1);
 
 for leg = 1:model.NLEGS
     for i = 1:numel(nodes_force{leg}.cs)
@@ -504,8 +521,7 @@ for leg = 1:model.NLEGS
         p_star{2, leg}(j, :) = convertHermiteCoef(sol.value(nodes_posn{leg}.y(j, :)), sol.value(nodes_posn{leg}.duration(j)));
         p_star{3, leg}(j, :) = convertHermiteCoef(sol.value(nodes_posn{leg}.z(j, :)), sol.value(nodes_posn{leg}.duration(j)));
     end
-    dur_f{leg} = sol.value(nodes_force{leg}.duration);
-    dur_p{leg} = sol.value(nodes_posn{leg}.duration);
+    phaseDuration_star{leg} = sol.value(phaseDurations{leg});
 end
 
 
@@ -529,8 +545,20 @@ legend('F_x', 'F_y', 'F_z')
 hold off
 
 figure;
+hold on;
+pp_p = mkpp(sol.value(time_posn{1}), p_star{1, 1});
+plot(time_eval, ppval(pp_p, time_eval));
+pp_p = mkpp(sol.value(time_posn{1}), p_star{2, 1});
+plot(time_eval, ppval(pp_p, time_eval));
 pp_p = mkpp(sol.value(time_posn{1}), p_star{3, 1});
 plot(time_eval, ppval(pp_p, time_eval));
+xlabel('Time (s)')
+ylabel('Posn FR (m)')
+legend('x', 'y', 'z')
+hold off
+
+
+phaseDuration_star{1}
 
 %% visualization
 

@@ -26,11 +26,9 @@ model  = get_robot_model(params);
 model  = buildShowMotionModelMC3D(params, model, 0);
 
 %% contact schedule parameters
-N = 16; % N = 11
-T = 0.5; % T = 0.22
+N = 41; % N = 11
+T = 0.6; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
-cs_val = [repmat([0 0 0 0]', 1, 2) repmat([1 1 0 0]', 1, 3) repmat([1 1 1 1]', 1, 10)];
-cs_TD_val = zeros(model.NLEGS,N-1);
 
 %% optimization
 % Optimization variables
@@ -51,8 +49,6 @@ f_grf = U(13:24,:);
 Xref = opti.parameter(12, N);       % floating base reference
 Uref = opti.parameter(24, N-1);     % foot posn + GRF reference
 
-cs = opti.parameter(model.NLEGS, N-1);      % contact schedule
-cs_TD = opti.parameter(model.NLEGS, N-1);   % contact schedule at touchdown (?)
 dt = opti.parameter(1, N-1);                % timesteps
 
 q_min = opti.parameter(6,1);q_max = opti.parameter(6,1);
@@ -120,7 +116,6 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     rpyk = q(4:6,k);
     ck = c(:,k);
     fk = f_grf(:,k);
-    csk = cs(:,k);
     
     R_world_to_body = rpyToRotMat(rpyk(1:3))';
     R_body_to_world = rpyToRotMat(rpyk(1:3));
@@ -141,19 +136,17 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     opti.subject_to(qdot(1:3,k+1) - qdk(1:3) == omegaDot * dt(k));
     
     % non-negative GRF
-    opti.subject_to(fk([3 6 9 12]) >= zeros(4,1));
-    
-    % constrain flight GRF to zero when not in contact, Eq (8a)
-    opti.subject_to(fk([3 6 9 12]) <= csk.*repmat(f_max,4,1));
-    
+    opti.subject_to(f_max*ones(4,1) >= fk([3 6 9 12]) >= zeros(4,1));
+
     % contact constraints
     R_yaw = rpyToRotMat([0 0 rpyk(3)]);
     for leg = 1:model.NLEGS
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-        opti.subject_to(csk(leg)*ck(3*(leg-1)+3) == 0);     % foot on ground when in contact
-        if (k+1 < N)                                        % no slip
-            stay_on_ground = repmat(csk(leg),3,1);
-            opti.subject_to(stay_on_ground.*(c(xyz_idx,k+1)-ck(xyz_idx)) == 0);
+        opti.subject_to(ck(xyz_idx(3)) >= 0);
+        opti.subject_to(fk(xyz_idx(3))*ck(xyz_idx(3)) <= 0.001);
+        if (k+1 < N)
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.01);
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.01);
         end
         
         r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
@@ -182,11 +175,11 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.40 0 pi/6 0]';
-qd_init_val = [0 0 0.0 1 1 -1]';
+q_init_val = [0 0 0.6 0 0 0]';
+qd_init_val = [0 0 3 1 0 -3.5]';
 
-q_min_val = [-10 -10 -0 -10 -10 -10];
-q_max_val = [10 10 0.4 10 10 10];
+q_min_val = [-10 -10 0.15 -10 -10 -10];
+q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
 
@@ -204,14 +197,15 @@ c_init_val = repmat(q_init_val(1:3),4,1)+...
 c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.2],1,4)';
 f_ref = zeros(12,1);
 
-QX_val = [10 10 10, 10 10 10, 10 10 10, 10 10 10]';
-QN_val = [0 0 100, 10 10 100, 10 10 10, 10 10 10]';
+QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
+QX_val = zeros(12, 1);
+QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
 Qf_val = [0.0001 0.0001 0.001]';
 
 mu_val = 1;
-l_leg_max_val = .3;
-f_max_val = 200;
+l_leg_max_val = .35;
+f_max_val = 250;
 
 %% set parameter values
 for i = 1:6
@@ -226,8 +220,6 @@ for leg = 1:4
 end
 opti.set_value(Xref, Xref_val);
 opti.set_value(Uref, Uref_val);
-opti.set_value(cs, cs_val);
-opti.set_value(cs_TD, cs_TD_val);
 opti.set_value(dt, dt_val);
 opti.set_value(q_min, q_min_val);opti.set_value(q_max, q_max_val);
 opti.set_value(qd_min, qd_min_val);opti.set_value(qd_max, qd_max_val);
@@ -293,7 +285,7 @@ opti.solver('ipopt',p_opts,s_opts);
 %% solve
 disp_box('Solving with Opti Stack');
 sol = opti.solve_limited();
-
+sound(sin(1:500));
 %% partition solution
 X_star = sol.value(X);
 U_star = sol.value(U);
@@ -313,7 +305,7 @@ q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
 % inverse kinematics, if called
 if run_IK
     for i = 1:N-1
-        [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess, cs_val(:,i));
+        [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess);
         if exitflag <= 0
             q_star(7:18,i) = q_foot_guess;
         end
@@ -333,6 +325,56 @@ end
 if show_animation
     showmotion(model,t_star,q_star)
 end
+
+figure;
+hold on;
+plot(t_star(1:end-1), U_star(15, :))
+plot(t_star(1:end-1), U_star(18, :))
+plot(t_star(1:end-1), U_star(21, :))
+plot(t_star(1:end-1), U_star(24, :))
+xlabel('Time (s)'); ylabel('Force (N)'); 
+legend('FR', 'FL', 'BR', 'BL')
+hold off;
+
+figure;
+hold on;
+plot(t_star(1:end-1), U_star(15, :))
+plot(t_star(1:end-1), U_star(16, :))
+plot(t_star(1:end-1), U_star(17, :))
+xlabel('Time (s)'); ylabel('Force FR (N)'); 
+legend('x','y','z')
+hold off;
+
+figure;
+hold on;
+plot(t_star(1:end-1), U_star(3, :))
+plot(t_star(1:end-1), U_star(6, :))
+plot(t_star(1:end-1), U_star(9, :))
+plot(t_star(1:end-1), U_star(12, :))
+xlabel('Time (s)'); ylabel('Foot height (m)'); 
+legend('FR', 'FL', 'BR', 'BL')
+hold off;
+
+figure;
+hold on;
+plot(t_star(1:end-1), U_star(15, :)/max(U_star(15,:)))
+plot(t_star(1:end-1), U_star(1, :))
+plot(t_star(1:end-1), U_star(2, :))
+plot(t_star(1:end-1), U_star(3, :))
+xlabel('Time (s)'); ylabel('Foot posn (m)'); 
+legend('F_z','x', 'y', 'z')
+hold off;
+
+% figure;
+% hold on;
+% plot(t_star(1:end-1), U_star(1, :))
+% plot(t_star(1:end-1), U_star(4, :))
+% plot(t_star(1:end-1), U_star(7, :))
+% plot(t_star(1:end-1), U_star(10, :))
+% xlabel('Time (s)'); ylabel('Foot x-posn (m)'); 
+% legend('FR', 'FL', 'BR', 'BL')
+% hold off;
+
 
 %% Generate .casadi Function
 if make_casadi_function
@@ -423,146 +465,5 @@ if make_casadi_function
     end
     
 end
-
-if make_vbl_functions
-    NUM_STATES = 24;
-    NUM_CONTROL = 12;
-    [Avbl, Bvbl] = generateVariationalDynamics(model);
-    [RDE_step, RDE_step_fwd] = generateRiccatiIntegrator(Avbl, Bvbl);
-    
-    % Integration Settings
-    dt_riccati = 0.022;
-    N_riccati = T/dt_riccati + 1;
-   
-    % Weight Matrices
-    F = zeros(NUM_STATES,NUM_STATES);
-    Fp = 1;
-    Ft = 5;
-    Fw = 4;
-    Fv = 3;
-    F(1:12,1:12) = [Fp 0 0, 0 0 0, 0 0 0, 0 0 0;...
-                    0 Fp 0, 0 0 0, 0 0 0, 0 0 0;...
-                    0 0 Fp, 0 0 0, 0 0 0, 0 0 0;...
-                    0 0 0, Ft 0 0, 0 0 0, 0 0 0;...
-                    0 0 0, 0 Ft 0, 0 0 0, 0 0 0;...
-                    0 0 0, 0 0 Ft, 0 0 0, 0 0 0;...
-                    0 0 0, 0 0 0, Fw 0 0, 0 0 0;...
-                    0 0 0, 0 0 0, 0 Fw 0, 0 0 0;...
-                    0 0 0, 0 0 0, 0 0 Fw, 0 0 0;...
-                    0 0 0, 0 0 0, 0 0 0, Fv 0 0;...
-                    0 0 0, 0 0 0, 0 0 0, 0 Fv 0;...
-                    0 0 0, 0 0 0, 0 0 0, 0 0 Fv];
-                
-    Q = zeros(NUM_STATES,NUM_STATES);
-    Qp = 0.25;
-    Qt = 1;
-    Qw = 0.5;
-    Qv = 1;
-    Qpw = 0;
-    Qpv = 0;
-    Qtw = 0;
-    Q(1:12,1:12) = [Qp 0 0, 0 0 0, Qpw -Qpw 0, Qpv 0 0;...
-                    0 Qp 0, 0 0 0, Qpw -Qpw 0, 0 Qpv 0;...
-                    0 0 Qp, 0 0 0, Qpw -Qpw 0, 0 0 Qpv;...
-                    0 0 0, Qt 0 0, Qtw 0 0, 0 0 0;...
-                    0 0 0, 0 Qt 0, 0 Qtw 0, 0 0 0;...
-                    0 0 0, 0 0 Qt, 0 0 Qtw, 0 0 0;...
-                    Qpw Qpw Qpw, Qtw 0 0, Qw 0 0, 0 0 0;...
-                    -Qpw -Qpw -Qpw, 0 Qtw 0, 0 Qw 0, 0 0 0;...
-                    0 0 0, 0 0 Qtw, 0 0 Qw, 0 0 0;...
-                    Qpv 0 0, 0 0 0, 0 0 0, Qv 0 0;...
-                    0 Qpv 0, 0 0 0, 0 0 0, 0 Qv 0;...
-                    0 0 Qpv, 0 0 0, 0 0 0, 0 0 Qv];
-    
-    if (min(eig(Q)) < 0)
-        error('Q must be positive semi-definite')
-    end
-    if (min(eig(F)) < 0)
-        error('Pf must be positive semi-definite')
-    end
-    R1 = 90.0;
-    R = diag(repmat([R1 R1 R1],1,4));
-    
-    % Data Logging
-    diag_ent = zeros(NUM_STATES,N_riccati);
-    diag_ent(:,N_riccati) = diag(F);
-    
-    % Integrate backward in time
-    P = zeros(N_riccati*NUM_STATES*NUM_STATES,1);
-    P(end-NUM_STATES*NUM_STATES+1:end,1) = reshape(F,NUM_STATES*NUM_STATES,1);
-    
-    for k = N_riccati:-1:2
-        % Sample the reference trajectory
-        t_int = (k-1)*dt_riccati;
-        k_opt = 1;
-        while (t_int > t_star(k_opt+1) && k_opt < N-1)
-            k_opt = k_opt + 1;
-        end
-        k_interp = (t_star(k_opt+1) - t_int) / (t_star(k_opt+1) - t_star(k_opt));
-        
-        xd = k_interp.*[X_star(1:12,k_opt);U_star(1:12,k_opt)] + ...
-            (1-k_interp).*[X_star(1:12,k_opt+1);U_star(1:12,k_opt)];
-        ud = U_star(13:24,k_opt);
-        
-        P_temp = RDE_step(P(NUM_STATES*NUM_STATES*(k-1)+1:NUM_STATES*NUM_STATES*k,1),...
-            xd, ud, Q(:), R(:), dt_riccati);
-        P(NUM_STATES*NUM_STATES*(k-2)+1:NUM_STATES*NUM_STATES*(k-1),1) = full(P_temp);
-        
-        diag_ent(:,k-1) = diag(full(reshape(P_temp,NUM_STATES,NUM_STATES)));
-    end
-    
-    % Forward Integrate
-    diag_ent_fwd = zeros(NUM_STATES,N_riccati);
-    diag_ent_fwd(:,1) = diag_ent(:,1);
-    %diag_ent_fwd(:,1) = diag(F);
-    
-    % Integrate backward in time
-    P_fwd = zeros(N_riccati*NUM_STATES*NUM_STATES,1);
-    P_fwd(1:NUM_STATES*NUM_STATES,1) = P(1:NUM_STATES*NUM_STATES,1);
-    %P_fwd(1:NUM_STATES*NUM_STATES,1) = reshape(F,NUM_STATES*NUM_STATES,1);
-    
-    for k = 1:1:N_riccati-1
-        % Sample the reference trajectory
-        t_int = (k-1)*dt_riccati;
-        k_opt = 1;
-        while (t_int > t_star(k_opt+1) && k_opt < N-1)
-            k_opt = k_opt + 1;
-        end
-        k_interp = (t_star(k_opt+1) - t_int) / (t_star(k_opt+1) - t_star(k_opt));
-        
-        xd = k_interp.*[X_star(1:12,k_opt);U_star(1:12,k_opt)] + ...
-            (1-k_interp).*[X_star(1:12,k_opt+1);U_star(1:12,k_opt)];
-        ud = U_star(13:24,k_opt);
-        
-        P_temp = RDE_step_fwd(P_fwd(NUM_STATES*NUM_STATES*(k-1)+1:NUM_STATES*NUM_STATES*k,1),...
-            xd, ud, Q(:), R(:), dt_riccati);
-        P_fwd(NUM_STATES*NUM_STATES*k+1:NUM_STATES*NUM_STATES*(k+1),1) = full(P_temp);
-        
-        diag_ent_fwd(:,k+1) = diag(full(reshape(P_temp,NUM_STATES,NUM_STATES)));
-    end
-    
-    disp_box('Integrated the Riccati Equation');
-    
-    % Plot the diagonals
-    figure
-    subplot(4,1,1)
-    plot(1:N_riccati,diag_ent(1:3,:),'r-','Linewidth',2.4)
-    hold on
-    plot(1:N_riccati,diag_ent_fwd(1:3,:),'k--','Linewidth',2.4)
-    subplot(4,1,2)
-    plot(1:N_riccati,diag_ent(4:6,:),'g','Linewidth',2.4)
-    hold on
-    plot(1:N_riccati,diag_ent_fwd(4:6,:),'b--','Linewidth',2.4)
-    subplot(4,1,3)
-    plot(1:N_riccati,diag_ent(7:9,:),'b','Linewidth',2.4)
-    hold on
-    plot(1:N_riccati,diag_ent_fwd(7:9,:),'g--','Linewidth',2.4)
-    subplot(4,1,4)
-    plot(1:N_riccati,diag_ent(10:12,:),'k','Linewidth',2.4)
-    hold on
-    plot(1:N_riccati,diag_ent_fwd(10:12,:),'r--','Linewidth',2.4)
-    
-end
-
 
 
