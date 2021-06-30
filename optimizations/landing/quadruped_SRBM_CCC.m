@@ -1,5 +1,6 @@
 %% metadata
 % Description: Trajectory optimization for quadrupedal landing with single rigid body model
+%              Uses Michael Posa's contact complementarity constraints with no-slip contacts
 % Author: Se Hwan Jeon
 
 %% cleanup
@@ -8,7 +9,6 @@ clear; clc; close all;
 
 %% flags
 make_casadi_function = false;
-make_vbl_functions = false;
 show_animation = true;
 run_IK = true;
 
@@ -17,6 +17,7 @@ run_IK = true;
 % addpath(genpath('../../utilities/casadi/casadi_windows'));
 % addpath(genpath('../../utilities/casadi/casadi_linux'));
 addpath(genpath('../../utilities_general'));
+addpath(genpath('codegen_casadi'));
 import casadi.*
 
 %% build robot model
@@ -84,8 +85,8 @@ for k = 1:(N-1)                  % running cost
     cost = cost + (X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
+    
 end
-
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
 
@@ -108,6 +109,8 @@ q_home = [0 0 0 0 0 0 q_leg_home q_leg_home q_leg_home q_leg_home]';
 [~,Ibody_val] = get_mass_matrix(model, q_home, 0);
 mass_val = Ibody_val(6,6);
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
+mu_k = 0.5;
+
 
 for k = 1:N-1               % the 'k' suffix indicates the value of the variable at the current timestep
     
@@ -145,8 +148,20 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         opti.subject_to(ck(xyz_idx(3)) >= 0);
         opti.subject_to(fk(xyz_idx(3))*ck(xyz_idx(3)) <= 0.001);
         if (k+1 < N)
-            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.01);
-            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.01);
+            % no-slip constraint
+%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.01);
+%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.01);
+            
+            % sliding constraint
+            sliding_x_pos = fk(xyz_idx(1)) - 0.71*mu_k*fk(xyz_idx(3));
+            sliding_x_neg = fk(xyz_idx(1)) + 0.71*mu_k*fk(xyz_idx(3));
+            sliding_y_pos = fk(xyz_idx(2)) - 0.71*mu_k*fk(xyz_idx(3));
+            sliding_y_neg = fk(xyz_idx(2)) + 0.71*mu_k*fk(xyz_idx(3));
+            
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(1),k+1)-ck(xyz_idx(1)))*sliding_x_pos <= 0.01);
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(1),k+1)-ck(xyz_idx(1)))*sliding_x_neg >= -0.01);
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(2),k+1)-ck(xyz_idx(2)))*sliding_y_pos <= 0.01);
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(2),k+1)-ck(xyz_idx(2)))*sliding_y_neg >= -0.01);
         end
         
         r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
@@ -175,8 +190,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.6 0 0 0]';
-qd_init_val = [0 0 3 1 0 -3.5]';
+q_init_val = [0 0 0.6 0 pi/4 0]';
+qd_init_val = [0 0 0 1 0 -3.5]';
 
 q_min_val = [-10 -10 0.15 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -242,11 +257,6 @@ opti.set_initial([X(:);U(:)],[Xref_val(:);Uref_val(:)]);
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
-% experimental: discrete formulation of contact state
-% p_opts.discrete = [zeros(12*N, 1);                  % floating base state, continuous
-%                    zeros(6*model.NLEGS*(N-1),1);    % foot position + GRFS, continuous
-%                    ones(model.NLEGS*(N-1), 1)];     % contact state, discrete
-
 
 s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'tol', 1e-4,... % (1e-6), 1e-4 works well
@@ -276,16 +286,18 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'min_refinement_steps',1,... % (1)
     'warm_start_init_point', 'no'); % (no)
 
-s_opts.file_print_level = 0;
-s_opts.print_level = 3;
+s_opts.file_print_level = 3;
+s_opts.print_level = 1;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
 
 %% solve
+tic
 disp_box('Solving with Opti Stack');
 sol = opti.solve_limited();
 sound(sin(1:500));
+toc
 %% partition solution
 X_star = sol.value(X);
 U_star = sol.value(U);
@@ -328,10 +340,10 @@ end
 
 figure;
 hold on;
-plot(t_star(1:end-1), U_star(15, :))
-plot(t_star(1:end-1), U_star(18, :))
-plot(t_star(1:end-1), U_star(21, :))
-plot(t_star(1:end-1), U_star(24, :))
+plot(t_star(1:end-1), U_star(15, :),'ro-')
+plot(t_star(1:end-1), U_star(18, :),'bo-')
+plot(t_star(1:end-1), U_star(21, :),'go-')
+plot(t_star(1:end-1), U_star(24, :),'ko-')
 xlabel('Time (s)'); ylabel('Force (N)'); 
 legend('FR', 'FL', 'BR', 'BL')
 hold off;
@@ -390,7 +402,7 @@ if make_casadi_function
         make_c_helper_functions = input('Generate c code for helper functions? (takes minutes) ');
         
         nlp_opts.expand = 0;%
-        c_code_folder  = 'casadi_functions_gen/c_helper_functions';
+        c_code_folder  = 'codegen_casadi';
         c_file_name = 'nlp_quad_SRBM';
         if make_c_helper_functions % if helper functions were never generated ||~isfile('casadi_functions_gen/nlp_full_kin_stance_auto_detect.so')
             
@@ -427,21 +439,23 @@ if make_casadi_function
     
     res_sym = solver('x0',X_initial_guess,'p',opti.p,'lbg',opti.lbg,'ubg',opti.ubg);
     % generate casadi function
-    f = casadi.Function('quadSRBM',{Xref, Uref, cs, dt,...
+    f = casadi.Function('quadSRBM',{Xref, Uref, dt,...
         q_min, q_max, qd_min, qd_max, q_init, qd_init, c_init,...
         q_term_min, q_term_max, qd_term_min, qd_term_max,...
         QX, QN, Qc, Qf, X_initial_guess, mu, l_leg_max, f_max, mass,...
-        Ib, Ib_inv, cs_TD},{res_sym.x,res_sym.f});
+        Ib, Ib_inv},{res_sym.x,res_sym.f});
     
+    tic
     % solve problem by calling f with numerial arguments (for verification)
     disp_box('Solving Problem with Solver, c code and simple bounds');
     [res.x,res.f] = f(Xref_val, Uref_val,...
-        cs_val, dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
+        dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
         q_init_val, qd_init_val, c_init_val,...
         q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
         QX_val, QN_val, Qc_val, Qf_val, [Xref_val(:);Uref_val(:)],...
         mu_val, l_leg_max_val, f_max_val, mass_val,...
-        diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)), cs_TD_val);
+        diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
+    toc
     
     % Decompose solution
     res.x = full(res.x);
@@ -460,7 +474,7 @@ if make_casadi_function
     % Save function
     save_casadi_function = input('Save Casadi Function? ');
     if save_casadi_function
-        f.save('casadi_functions_gen/f_quad_SRBM.casadi');
+        f.save('codegen_casadi/f_quad_SRBM.casadi');
         save('quadSRBMfun.mat','f')
     end
     
