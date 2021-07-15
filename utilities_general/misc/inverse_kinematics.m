@@ -1,5 +1,5 @@
 function [x, fval, exitflag] = inverse_kinematics(q_foot, model, q_body, q_foot_guess)
-    [x, fval, exitflag] = fsolve(@(q) foot_residual(q_foot, model, q_body, q), q_foot_guess);
+    [x, fval, exitflag] = fsolve(@(q) foot_residual(q_foot, model, q_body, q), q_foot_guess, optimset('Display','off'));
 end
 
 function residual = foot_residual(q_foot, model, q_body, q_foot_guess)
