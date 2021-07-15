@@ -5,10 +5,11 @@
 clc; clear all; close all; 
 
 addpath(genpath('../..'));
+import casadi.*
 
 %% data generation
 
-opt_fixed = 'pitch_45';
+opt_fixed = 'pitch_40';
 opt_sweep = 'vX';
 
 q_init = [0 0 0.6 0 0 0]';
