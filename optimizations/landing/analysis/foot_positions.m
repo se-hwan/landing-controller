@@ -4,12 +4,13 @@
 
 clc; clear all; close all; 
 
-addpath(genpath('../..'));
+addpath(genpath('../../../utilties_general'));
+addpath(genpath('../../landing'));
 import casadi.*
 
 %% data generation
 
-opt_fixed = 'pitch_40';
+opt_fixed = 'pitch_0';
 opt_sweep = 'vX';
 
 q_init = [0 0 0.6 0 0 0]';
@@ -28,13 +29,13 @@ p_hip = [0.19;-0.1;0;...
          -0.19;0.1;0]; % TODO: make this an opt parameter?
 
 for i = 1:numel(sweep)
-    q_init = [0 0 0.6 0 pi/4 0]';
+    q_init = [0 0 0.6 0 deg2rad(0) 0]';
     qd_init = [0 0 0 sweep(i) 0 -3]';
     [X_star, q_star, f_star, p_star] = eval_SRBM_CCC(q_init, qd_init);
     td_idx = zeros(4, 1);
     td(1) = find(f_star(3,:)>1, 1); td(2) = find(f_star(6,:)>1, 1);
     td(3) = find(f_star(9,:)>1, 1); td(4) = find(f_star(12,:)>1, 1);
-
+ 
     opt_sol{i}.X_star = X_star;
     opt_sol{i}.q_star = q_star;
     opt_sol{i}.f_star = f_star;
@@ -46,7 +47,7 @@ end
 %% save data
 save_data = input('Save optimization results? ');
 if save_data
-    save(['../data/',opt_fixed,'_',opt_sweep, '.mat'], 'opt_sol');
+    save(['data/',opt_fixed,'_',opt_sweep, '.mat'], 'opt_sol');
 end
 %% plotting
 

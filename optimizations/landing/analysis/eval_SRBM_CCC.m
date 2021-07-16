@@ -1,6 +1,6 @@
 function [X_star, q_star, f_star, p_star] = eval_SRBM_CCC(q_init, qd_init)
 
-    addpath(genpath('../../utilities_general'));
+    addpath(genpath('../../../utilities_general'));
     addpath(genpath('codegen_casadi'));
     import casadi.*
 
