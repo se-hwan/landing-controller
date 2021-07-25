@@ -8,7 +8,6 @@ rmpath(genpath('.')); % clear all previously added paths
 clear; clc; close all;
 
 %% flags
-make_casadi_function = false;
 show_animation = true;
 run_IK = true;
 
@@ -27,7 +26,7 @@ model  = get_robot_model(params);
 model  = buildShowMotionModelMC3D(params, model, 0);
 
 %% contact schedule parameters
-N = 41; % N = 11
+N = 21; % N = 11
 T = 0.6; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
 
@@ -79,13 +78,27 @@ p_hip = [0.19;-0.1;-0.2;...
 %% cost function
 cost = casadi.MX(0);             % initialize cost
 for k = 1:(N-1)                  % running cost
-    X_err = X(:,k) - Xref(:,k);                                         % floating base error
-    pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+%     X_err = X(:,k) - Xref(:,k);                                         % floating base error
+%     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+%     cost = cost + (X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
+%         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
+%         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
+%     
+%     if (k < 10)
+%         v_world = X(10:12, k);
+%         phi_v_world = atan(v_world(1)/v_world(3));
+%         R_body_to_world = rpyToRotMat(X(4:6, k));
+%         for leg = 1:2
+%             xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+%             r_hip = X(1:3)' + R_body_to_world*params.hipSrbmLocation(leg,:)';
+%             p_foot_rel = U(xyz_idx, k) - r_hip;
+%             phi_p_foot = atan(p_foot_rel(1)/p_foot_rel(3));
+%             % cost = cost + .1*(phi_v_world - phi_p_foot)^2;
+%         end
+%     end
     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
-    cost = cost + (X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
-        pf_err'*diag(repmat(Qc,4,1))*pf_err+...
-        U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
-    
+    cost = cost + U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
 end
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
@@ -151,23 +164,12 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
             % no-slip constraint
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.01);
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.01);
-            
-%             % sliding constraint
-%             sliding_x_pos = fk(xyz_idx(1)) - 0.71*mu_k*fk(xyz_idx(3));
-%             sliding_x_neg = fk(xyz_idx(1)) + 0.71*mu_k*fk(xyz_idx(3));
-%             sliding_y_pos = fk(xyz_idx(2)) - 0.71*mu_k*fk(xyz_idx(3));
-%             sliding_y_neg = fk(xyz_idx(2)) + 0.71*mu_k*fk(xyz_idx(3));
-%             
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(1),k+1)-ck(xyz_idx(1)))*sliding_x_pos <= 0.01);
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(1),k+1)-ck(xyz_idx(1)))*sliding_x_neg >= -0.01);
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(2),k+1)-ck(xyz_idx(2)))*sliding_y_pos <= 0.01);
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(2),k+1)-ck(xyz_idx(2)))*sliding_y_neg >= -0.01);
         end
         
         r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
         p_rel = (ck(xyz_idx) - r_hip);
-        kin_box_x = 0.05;
-        kin_box_y = 0.05;
+        kin_box_x = 0.1;
+        kin_box_y = 0.1;
         kin_box_z = 0.27;
         
         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
@@ -190,8 +192,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/4 0]';
-qd_init_val = [0 0 0 1 0 -3.5]';
+q_init_val = [0 0 0.6 0 pi/3 0]';
+qd_init_val = [0 0 0 0 0 -3]';
 
 q_min_val = [-10 -10 0.15 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -322,97 +324,7 @@ t_star = zeros(1,N);
 for k = 2:N
     t_star(k) = t_star(k-1) + dt_val(1,k-1);
 end
-
-%% Generate .casadi Function
-if make_casadi_function
-    disp_box('Building Solver with (or without) Simple Bounds');
-    nlp_opts = p_opts;
-    nlp_opts.ipopt = s_opts;
-    solver = nlpsol('solver','ipopt',struct('x',opti.x,'p',opti.p,'f',opti.f,'g',opti.g),nlp_opts);
-    disp('Solver without Simple Bounds generated');
     
-    % Generate c code for helper functions
-    use_code_gen = input('Use c-generated helper functions? ');
-    if use_code_gen
-        make_c_helper_functions = input('Generate c code for helper functions? (takes minutes) ');
-        
-        nlp_opts.expand = 0;%
-        c_code_folder  = 'codegen_casadi';
-        c_file_name = 'nlp_quad_SRBM';
-        if make_c_helper_functions % if helper functions were never generated ||~isfile('casadi_functions_gen/nlp_full_kin_stance_auto_detect.so')
-            
-            disp_box('Generating c code');
-            
-            solver.generate_dependencies([c_file_name,'.c']);% generete helper functions
-            disp('Done generating .c file');
-            
-            disp('Compiling .c file (takes ~3 minutes)');
-            command = ['gcc -fPIC -shared -O3 ', c_file_name,'.c -o ',c_file_name,'.so'];
-            tic;
-            [status1,cmdout] = system(command,'-echo'); % compile the file % takes a few minutes
-            t_comp=toc;
-            fprintf('Done compiling in :%.2f s\n',t_comp)
-            
-            if(~isfolder(c_code_folder))
-                error(['Missing Folder: ',c_code_folder])
-            end
-            
-            %move to another directory
-            status2 = system(['mv ',c_file_name,'.c ', c_code_folder]);
-            disp([' .c file was moved to folder ', c_code_folder]);
-            status3 = system(['mv ',c_file_name,'.so ', c_code_folder]);
-            disp([' .so file was moved to folder ', c_code_folder]);
-            
-        end
-        
-        solver = casadi.nlpsol('solver', 'ipopt', ['./',c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
-        disp('Loaded the solver with c code and simple bounds');
-    end
-    
-    %% workaround for passing initial guess param since opti stack does not support parameterized initial guesses yet
-    X_initial_guess =  casadi.MX.sym('x0',size(opti.advanced.arg.x0,1),size(opti.advanced.arg.x0,2));
-    
-    res_sym = solver('x0',X_initial_guess,'p',opti.p,'lbg',opti.lbg,'ubg',opti.ubg);
-    % generate casadi function
-    f = casadi.Function('quadSRBM',{Xref, Uref, dt,...
-        q_min, q_max, qd_min, qd_max, q_init, qd_init, c_init,...
-        q_term_min, q_term_max, qd_term_min, qd_term_max,...
-        QX, QN, Qc, Qf, X_initial_guess, mu, l_leg_max, f_max, mass,...
-        Ib, Ib_inv},{res_sym.x,res_sym.f});
-    
-%     tic
-%     % solve problem by calling f with numerial arguments (for verification)
-%     disp_box('Solving Problem with Solver, c code and simple bounds');
-%     [res.x,res.f] = f(Xref_val, Uref_val,...
-%         dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
-%         q_init_val, qd_init_val, c_init_val,...
-%         q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
-%         QX_val, QN_val, Qc_val, Qf_val, [Xref_val(:);Uref_val(:)],...
-%         mu_val, l_leg_max_val, f_max_val, mass_val,...
-%         diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
-%     toc
-    
-    % Decompose solution
-    res.x = full(res.x);
-    X_star = reshape(res.x(1:numel(X)),size(X));
-    q_star(1:6,:) = X_star(1:6,:);
-    q_star(7:18,:) = repmat(q_home(7:end),1,N);
-    t_star = zeros(1,N);
-    for k = 2:N
-        t_star(k) = t_star(k-1) + dt_val(1,k-1);
-    end
-    
-    if(show_animation==1)
-        showmotion(model,t_star,q_star)
-    end
-    
-    % Save function
-    save_casadi_function = input('Save Casadi Function? ');
-    if save_casadi_function
-        f.save('codegen_casadi/f_quad_SRBM.casadi');
-        save('quadSRBMfun.mat','f')
-    end
-    
+if(show_animation)
+    showmotion(model,t_star,q_star)
 end
-
-

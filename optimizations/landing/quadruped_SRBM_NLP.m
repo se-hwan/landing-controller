@@ -30,6 +30,7 @@ N = 16; % N = 11
 T = 0.5; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
 cs_val = [repmat([0 0 0 0]', 1, 2) repmat([1 1 0 0]', 1, 3) repmat([1 1 1 1]', 1, 10)];
+cs_val = [repmat([0 0 0 0]', 1, 2) repmat([1 1 1 1]', 1, 3) repmat([1 1 1 1]', 1, 10)];
 cs_TD_val = zeros(model.NLEGS,N-1);
 
 %% optimization
@@ -101,10 +102,10 @@ opti.subject_to(qdot(1:6,1) == qd_init);    % initial ang. vel. + lin. vel.
 % opti.subject_to(c(:,1) == c_init);          % initial foot positions
 
 %% terminal state constraints
-opti.subject_to(q(:,N) >= q_term_min);      % bounds terminal state to be within specified min/max values
-opti.subject_to(q(:,N) <= q_term_max);
-opti.subject_to(qdot(:,N) >= qd_term_min);
-opti.subject_to(qdot(:,N) <= qd_term_max);
+% opti.subject_to(q(:,N) >= q_term_min);      % bounds terminal state to be within specified min/max values
+% opti.subject_to(q(:,N) <= q_term_max);
+% opti.subject_to(qdot(:,N) >= qd_term_min);
+% opti.subject_to(qdot(:,N) <= qd_term_max);
 
 %% general constraints
 q_leg_home = [0 -1.45 2.65];
@@ -182,8 +183,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.40 0 pi/6 0]';
-qd_init_val = [0 0 0.0 1 1 -1]';
+q_init_val = [0 0 0.35 0 0 0]';
+qd_init_val = [0 0 0.0 0 0 -1]';
 
 q_min_val = [-10 -10 -0 -10 -10 -10];
 q_max_val = [10 10 0.4 10 10 10];
