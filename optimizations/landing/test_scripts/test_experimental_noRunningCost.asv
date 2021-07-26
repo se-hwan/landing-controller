@@ -10,6 +10,7 @@ clear; clc; close all;
 %% flags
 show_animation = true;
 run_IK = true;
+make_plots = true;
 
 %% add library paths
 % may need to specify os directory
@@ -26,7 +27,7 @@ model  = get_robot_model(params);
 model  = buildShowMotionModelMC3D(params, model, 0);
 
 %% contact schedule parameters
-N = 41; % N = 11
+N = 21; % N = 11
 T = 0.6; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
 
@@ -78,25 +79,27 @@ p_hip = [0.19;-0.1;-0.2;...
 %% cost function
 cost = casadi.MX(0);             % initialize cost
 for k = 1:(N-1)                  % running cost
-    X_err = X(:,k) - Xref(:,k);                                         % floating base error
-    pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
-    U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
-    cost = cost + (X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
-        pf_err'*diag(repmat(Qc,4,1))*pf_err+...
-        U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
-    
-    
-    v_world = X(10:12, k);
-    phi_v_world = atan(v_world(1)/v_world(3));
-    R_body_to_world = rpyToRotMat(X(4:6, k));
-    for leg = 1:4
-        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-        r_hip = X(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
-        p_foot_rel = U(xyz_idx,)
-    end
-    
-    cost = cost + 
-    
+%     X_err = X(:,k) - Xref(:,k);                                         % floating base error
+%     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+%     cost = cost + (X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
+%         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
+%         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
+%     
+%     if (k < 10)
+%         v_world = X(10:12, k);
+%         phi_v_world = atan(v_world(1)/v_world(3));
+%         R_body_to_world = rpyToRotMat(X(4:6, k));
+%         for leg = 1:2
+%             xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+%             r_hip = X(1:3)' + R_body_to_world*params.hipSrbmLocation(leg,:)';
+%             p_foot_rel = U(xyz_idx, k) - r_hip;
+%             phi_p_foot = atan(p_foot_rel(1)/p_foot_rel(3));
+%             % cost = cost + .1*(phi_v_world - phi_p_foot)^2;
+%         end
+%     end
+%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+%     cost = cost +  U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
 end
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
@@ -120,7 +123,6 @@ q_home = [0 0 0 0 0 0 q_leg_home q_leg_home q_leg_home q_leg_home]';
 [~,Ibody_val] = get_mass_matrix(model, q_home, 0);
 mass_val = Ibody_val(6,6);
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
-mu_k = 0.5;
 
 
 for k = 1:N-1               % the 'k' suffix indicates the value of the variable at the current timestep
@@ -157,29 +159,18 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     for leg = 1:model.NLEGS
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
         opti.subject_to(ck(xyz_idx(3)) >= 0);
-        opti.subject_to(fk(xyz_idx(3))*ck(xyz_idx(3)) <= 0.001);
+        opti.subject_to(fk(xyz_idx(3))*ck(xyz_idx(3)) <= .01);
         if (k+1 < N)
             % no-slip constraint
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.01);
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.01);
-            
-%             % sliding constraint
-%             sliding_x_pos = fk(xyz_idx(1)) - 0.71*mu_k*fk(xyz_idx(3));
-%             sliding_x_neg = fk(xyz_idx(1)) + 0.71*mu_k*fk(xyz_idx(3));
-%             sliding_y_pos = fk(xyz_idx(2)) - 0.71*mu_k*fk(xyz_idx(3));
-%             sliding_y_neg = fk(xyz_idx(2)) + 0.71*mu_k*fk(xyz_idx(3));
-%             
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(1),k+1)-ck(xyz_idx(1)))*sliding_x_pos <= 0.01);
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(1),k+1)-ck(xyz_idx(1)))*sliding_x_neg >= -0.01);
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(2),k+1)-ck(xyz_idx(2)))*sliding_y_pos <= 0.01);
-%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx(2),k+1)-ck(xyz_idx(2)))*sliding_y_neg >= -0.01);
         end
         
         r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
         p_rel = (ck(xyz_idx) - r_hip);
-        kin_box_x = 0.05;
-        kin_box_y = 0.05;
-        kin_box_z = 0.27;
+        kin_box_x = 0.15;
+        kin_box_y = 0.15;
+        kin_box_z = 0.30;
         
         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
@@ -201,10 +192,10 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/4 0]';
-qd_init_val = [0 0 0 1 0 -3.5]';
+q_init_val = [0 0 0.6 pi/6 pi/4 0]';
+qd_init_val = [2 -.5 2 1.5 1.5 -4.]';
 
-q_min_val = [-10 -10 0.15 -10 -10 -10];
+q_min_val = [-10 -10 0.075 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
@@ -214,7 +205,7 @@ q_term_max_val = [10 10 5 0.1 0.1 10];
 qd_term_min_val = [-10 -10 -10 -40 -40 -40];
 qd_term_max_val = [10 10 10 40 40 40];
 
-q_term_ref = [0 0 0.2, 0 0 0]';
+q_term_ref = [0 0 0.275, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
 
 c_init_val = repmat(q_init_val(1:3),4,1)+...
@@ -227,11 +218,11 @@ QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
 QX_val = zeros(12, 1);
 QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
-Qf_val = [0.0001 0.0001 0.001]';
+Qf_val = [.001/200 .001/200 .0001/200]';
 
 mu_val = 1;
 l_leg_max_val = .35;
-f_max_val = 250;
+f_max_val = 200;
 
 %% set parameter values
 for i = 1:6
@@ -264,7 +255,10 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
-opti.set_initial([X(:);U(:)],[Xref_val(:);Uref_val(:)]);
+% load('prevSoln.mat'); U_star_guess = U_star; X_star_guess = X_star;
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
+% opti.set_initial([X(:); U(:)],[Xref_val(:); Uref_val(:)]);
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -290,7 +284,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -298,14 +292,16 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'warm_start_init_point', 'no'); % (no)
 
 s_opts.file_print_level = 3;
-s_opts.print_level = 1;
+s_opts.print_level = 3;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
+% opti.solver('knitro')
 
 %% solve
-tic
+
 disp_box('Solving with Opti Stack');
+tic
 sol = opti.solve_limited();
 toc
 
@@ -314,6 +310,7 @@ X_star = sol.value(X);
 U_star = sol.value(U);
 q_star(1:6,:) = sol.value(q);
 q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
+save('prevSoln.mat','X_star','U_star');
 
 % inverse kinematics, if called
 if run_IK
@@ -337,3 +334,51 @@ end
 if(show_animation)
     showmotion(model,t_star,q_star)
 end
+
+
+%% plots
+f_star = U_star(13:24, :); p_star = U_star(1:12, :);
+
+if make_plots
+    
+    % GRF plots
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(3), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('Vertical ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    % CoM plots
+    figure; hold on;
+    plot(t_star, q_star(1,:))
+    plot(t_star, q_star(2,:))
+    plot(t_star, q_star(3,:))
+    xlabel('Time (s)'); ylabel('Position (m)');
+    legend('X','Y','Z')
+    title('CoM Position')
+    hold off;
+    
+    % Orientation plots
+    figure; hold on;
+    plot(t_star, q_star(1,:))
+    plot(t_star, q_star(2,:))
+    plot(t_star, q_star(3,:))
+    xlabel('Time (s)'); ylabel('Position (m)');
+    legend('X','Y','Z')
+    title('CoM Position')
+    hold off;
+    
+end
+    
+    
+    
+    
+    
+    
+    
+    
+    

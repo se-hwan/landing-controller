@@ -10,6 +10,7 @@ clear; clc; close all;
 %% flags
 show_animation = true;
 run_IK = true;
+make_plots = true;
 
 %% add library paths
 % may need to specify os directory
@@ -97,7 +98,7 @@ for k = 1:(N-1)                  % running cost
 %             % cost = cost + .1*(phi_v_world - phi_p_foot)^2;
 %         end
 %     end
-    U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
 %     cost = cost +  U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
 end
 X_err = X(:,end)-Xref(:,end);    % terminal cost
@@ -191,8 +192,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/4 0]';
-qd_init_val = [0 0 0 0 1 -3.]';
+q_init_val = [0 0 0.6 0 pi/6 0]';
+qd_init_val = [0 0 0 1.5 1.5 -3.]';
 
 q_min_val = [-10 -10 0.075 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -218,7 +219,7 @@ QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
 QX_val = zeros(12, 1);
 QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
-Qf_val = [0.0001 0.0001 0.001]';
+Qf_val = [.001/200 .001/200 .0001/200]';
 
 mu_val = 1;
 l_leg_max_val = .35;
@@ -334,3 +335,32 @@ end
 if(show_animation)
     showmotion(model,t_star,q_star)
 end
+
+
+%% plots
+f_star = U_star(13:24, :); p_star = U_star(1:12, :);
+
+if make_plots
+    
+    % GRF plots
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(3), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('Vertical ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    
+end
+    
+    
+    
+    
+    
+    
+    
+    
+    
