@@ -10,7 +10,7 @@ clear; clc; close all;
 %% flags
 show_animation = true;
 run_IK = true;
-make_plots = true;
+make_plots = false;
 
 %% add library paths
 % may need to specify os directory
@@ -192,8 +192,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.6 pi/6 pi/4 0]';
-qd_init_val = [2 -.5 2 1.5 1.5 -4.]';
+q_init_val = [0 0 0.6 0 -pi/3 0]';
+qd_init_val = [0 0 0 1.55 -2   -3.]';
 
 q_min_val = [-10 -10 0.075 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -255,10 +255,13 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
-% load('prevSoln.mat'); U_star_guess = U_star; X_star_guess = X_star;
+load('prevSoln.mat'); 
+U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
 % opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+% opti.set_initial(opti.lam_g, lam_g_star);
 opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:); U(:)],[Xref_val(:); Uref_val(:)]);
+% opti.set_initial([X(:)],[Xref_val(:)]);
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -289,14 +292,26 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
     'min_refinement_steps',1,... % (1)
-    'warm_start_init_point', 'no'); % (no)
+    'warm_start_init_point', 'yes'); % (no)
 
 s_opts.file_print_level = 3;
 s_opts.print_level = 3;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
-opti.solver('ipopt',p_opts,s_opts);
-% opti.solver('knitro')
+% opti.solver('ipopt',p_opts,s_opts);
+
+ s_opts = struct('linsolver',4,... %4 works well
+            'outlev', 7,...
+            'strat_warm_start',0,...
+            'algorithm',0,...
+            'bar_murule',2,... % 5 works well
+            'feastol',1e-4,...
+            'tuner',0,...
+            'bar_feasible',0,... %0 works well
+            'bar_directinterval',10,...
+            'maxit',800);%,...
+
+opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 
@@ -309,8 +324,11 @@ toc
 X_star = sol.value(X);
 U_star = sol.value(U);
 q_star(1:6,:) = sol.value(q);
+qd_star = sol.value(qdot);
+lam_g_star = sol.value(opti.lam_g);
+save('prevSoln.mat','X_star','U_star', 'lam_g_star');
+
 q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
-save('prevSoln.mat','X_star','U_star');
 
 % inverse kinematics, if called
 if run_IK
@@ -341,7 +359,7 @@ f_star = U_star(13:24, :); p_star = U_star(1:12, :);
 
 if make_plots
     
-    % GRF plots
+    % GRFs
     figure; hold on;
     for leg = 1:4
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
@@ -352,7 +370,7 @@ if make_plots
     legend('FR', 'FL', 'BR', 'BL')
     hold off;
     
-    % CoM plots
+    % CoM posn
     figure; hold on;
     plot(t_star, q_star(1,:))
     plot(t_star, q_star(2,:))
@@ -362,15 +380,26 @@ if make_plots
     title('CoM Position')
     hold off;
     
-    % Orientation plots
+    % CoM posn
     figure; hold on;
-    plot(t_star, q_star(1,:))
-    plot(t_star, q_star(2,:))
-    plot(t_star, q_star(3,:))
-    xlabel('Time (s)'); ylabel('Position (m)');
+    plot(t_star, qd_star(4,:))
+    plot(t_star, qd_star(5,:))
+    plot(t_star, qd_star(6,:))
+    xlabel('Time (s)'); ylabel('Velocity (m/s)');
     legend('X','Y','Z')
-    title('CoM Position')
+    title('CoM Velocity')
     hold off;
+    
+    % orientation
+    figure; hold on;
+    plot(t_star, rad2deg(q_star(4,:)))
+    plot(t_star, rad2deg(q_star(5,:)))
+    plot(t_star, rad2deg(q_star(6,:)))
+    xlabel('Time (s)'); ylabel('Orientation (degrees)');
+    legend('Roll', 'Pitch', 'Yaw')
+    title('CoM Orientation')
+    hold off;
+    
     
 end
     

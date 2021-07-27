@@ -296,7 +296,7 @@ s_opts.print_level = 3;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
-% opti.solver('knitro')
+opti.solver('knitro')
 
 %% solve
 
