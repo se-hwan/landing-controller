@@ -10,7 +10,7 @@ clear; clc; close all;
 %% flags
 show_animation = true;
 run_IK = true;
-make_plots = false;
+make_plots = true;
 
 %% add library paths
 % may need to specify os directory
@@ -192,15 +192,15 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
 end
 %% reference trajectories
-q_init_val = [0 0 0.6 0 -pi/3.2 0]';
-qd_init_val = [0 0 0 1.5 -2   -3.]';
+q_init_val = [0 0 0.6 0 0 -pi/4]';
+qd_init_val = [0 4 5 1.5 -2 -2.]';
 
 q_min_val = [-10 -10 0.075 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
 
-q_term_min_val = [-10 -10 0.15 -0.1 -0.1 -10];
+q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
 q_term_max_val = [10 10 5 0.1 0.1 10];
 qd_term_min_val = [-10 -10 -10 -40 -40 -40];
 qd_term_max_val = [10 10 10 40 40 40];
@@ -261,7 +261,7 @@ U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
 % opti.set_initial([X(:)],[X_star_guess(:)]);
 % opti.set_initial(opti.lam_g, lam_g_star);
 opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:)],[Xref_val(:)]);
+opti.set_initial([X(:)],[Xref_val(:)]);
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
