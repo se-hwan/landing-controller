@@ -273,6 +273,12 @@ s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
 
+%% solve
+tic
+disp_box('Solving with Opti Stack');
+sol = opti.solve_limited();
+toc
+
 %% Generate .casadi Function
 if make_casadi_function
     disp_box('Building Solver with (or without) Simple Bounds');
@@ -315,7 +321,7 @@ if make_casadi_function
             
         end
         
-        solver = casadi.nlpsol('solver', 'ipopt', ['/',c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
+        solver = casadi.nlpsol('solver', 'ipopt', [c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
         disp('Loaded the solver with c code and simple bounds');
     end
     
@@ -339,7 +345,7 @@ if make_casadi_function
         dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
         q_init_val, qd_init_val, c_init_val,...
         q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
-        QN_val, [Xref_val(:);Uref_val(:)],...
+        QN_val, [X_star_guess(:);U_star_guess(:)], lam_g_star_guess,...
         mu_val, l_leg_max_val, f_max_val, mass_val,...
         diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
     toc

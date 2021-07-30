@@ -262,11 +262,17 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'min_refinement_steps',1,... % (1)
     'warm_start_init_point', 'yes'); % (no)
 
-s_opts.file_print_level = 3;
-s_opts.print_level = 3;
+s_opts.file_print_level = 0;
+s_opts.print_level = 0;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
+
+%% solve
+tic
+disp_box('Solving with Opti Stack');
+sol = opti.solve_limited();
+toc
 
 %% Generate .casadi Function
 if make_casadi_function
@@ -296,7 +302,7 @@ if make_casadi_function
             tic;
             [status1,cmdout] = system(command,'-echo'); % compile the file % takes a few minutes
             t_comp=toc;
-            fprintf('Done compiling in :%.2f s\n',t_comp)
+            fprintf('Done compiling in: %.2f s\n',t_comp)
             
             if(~isfolder(c_code_folder))
                 error(['Missing Folder: ',c_code_folder])
@@ -310,7 +316,7 @@ if make_casadi_function
             
         end
         
-        solver = casadi.nlpsol('solver', 'ipopt', ['/',c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
+        solver = casadi.nlpsol('solver', 'ipopt', [c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
         disp('Loaded the solver with c code and simple bounds');
     end
     

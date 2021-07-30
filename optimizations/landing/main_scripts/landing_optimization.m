@@ -10,7 +10,7 @@ clear; clc; close all;
 %% flags
 show_animation = true;
 run_IK = true;
-make_plots = false;
+make_plots = true;
 
 %% add library paths
 % may need to specify os directory
@@ -239,6 +239,11 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
+% load('prevSoln.mat'); 
+% U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+% opti.set_initial(opti.lam_g, lam_g_star);
 opti.set_initial([U(:)],[Uref_val(:)]);
 % opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
@@ -265,7 +270,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)

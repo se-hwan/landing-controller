@@ -248,51 +248,68 @@ s_opts = struct('linsolver',5,... % 5 works well (MA57)
             'maxit',800);
 opti.solver('knitro', p_opts, s_opts);
 
+%% solve
+tic
+disp_box('Solving with Opti Stack');
+sol = opti.solve_limited();
+toc
+
 %% Generate .casadi Function
 if make_casadi_function
     disp_box('Building Solver with (or without) Simple Bounds');
     nlp_opts = p_opts;
-    nlp_opts.ipopt = s_opts;
-    solver = nlpsol('solver','ipopt',struct('x',opti.x,'p',opti.p,'f',opti.f,'g',opti.g),nlp_opts);
+    nlp_opts.knitro = s_opts;
+    if true
+        nlp_opts.jit=true;
+    else
+        nlp_opts.jit=false;
+    end
+
+    jit_options = struct('flags', '-O1', 'verbose', true, 'compiler', 'ccache gcc');
+%             options = struct('jit', true, 'compiler', 'shell', 'jit_options', jit_options);
+    nlp_opts.compiler='shell';
+    nlp_opts.jit_options=jit_options;
+    nlp_opts.jit_temp_suffix=false;
+    solver = nlpsol('solver','knitro',struct('x',opti.x,'p',opti.p,'f',opti.f,'g',opti.g),nlp_opts);
     disp('Solver without Simple Bounds generated');
     
     % Generate c code for helper functions
     use_code_gen = input('Use c-generated helper functions? ');
-    if use_code_gen
-        make_c_helper_functions = input('Generate c code for helper functions? (takes minutes) ');
-        
-        nlp_opts.expand = 0;%
-        c_code_folder  = '../codegen_casadi';
-        c_file_name = 'landingCtrller_KNITRO';
-        if make_c_helper_functions % if helper functions were never generated ||~isfile('casadi_functions_gen/nlp_full_kin_stance_auto_detect.so')
-            
-            disp_box('Generating c code');
-            
-            solver.generate_dependencies([c_file_name,'.c']);% generete helper functions
-            disp('Done generating .c file');
-            
-            disp('Compiling .c file...');
-            command = ['gcc -fPIC -shared -O3 ', c_file_name,'.c -o ',c_file_name,'.so'];
-            tic;
-            [status1,cmdout] = system(command,'-echo'); % compile the file % takes a few minutes
-            t_comp=toc;
-            fprintf('Done compiling in :%.2f s\n',t_comp)
-            
-            if(~isfolder(c_code_folder))
-                error(['Missing Folder: ',c_code_folder])
-            end
-            
-            % move generated files
-            status2 = system(['mv ',c_file_name,'.c ', c_code_folder]);
-            disp([' .c file was moved to folder ', c_code_folder]);
-            status3 = system(['mv ',c_file_name,'.so ', c_code_folder]);
-            disp([' .so file was moved to folder ', c_code_folder]);
-            
-        end
-        
-        solver = casadi.nlpsol('solver', 'knitro', ['/',c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
-        disp('Loaded the solver with c code and simple bounds');
-    end
+%     if use_code_gen
+%         make_c_helper_functions = input('Generate c code for helper functions? (takes minutes) ');
+%         
+%         nlp_opts.expand = 0;%
+%         c_code_folder  = '../codegen_casadi';
+%         c_file_name = 'landingCtrller_KNITRO';
+%         if make_c_helper_functions % if helper functions were never generated ||~isfile('casadi_functions_gen/nlp_full_kin_stance_auto_detect.so')
+%             
+%             disp_box('Generating c code');
+%             
+%             solver.generate_dependencies([c_file_name,'.c']);% generete helper functions
+%             disp('Done generating .c file');
+%             
+%             disp('Compiling .c file...');
+%             command = ['gcc -fPIC -shared -O3 ', c_file_name,'.c -o ',c_file_name,'.so'];
+%             tic;
+%             [status1,cmdout] = system(command,'-echo'); % compile the file % takes a few minutes
+%             t_comp=toc;
+%             fprintf('Done compiling in :%.2f s\n',t_comp)
+%             
+%             if(~isfolder(c_code_folder))
+%                 error(['Missing Folder: ',c_code_folder])
+%             end
+%             
+%             % move generated files
+%             status2 = system(['mv ',c_file_name,'.c ', c_code_folder]);
+%             disp([' .c file was moved to folder ', c_code_folder]);
+%             status3 = system(['mv ',c_file_name,'.so ', c_code_folder]);
+%             disp([' .so file was moved to folder ', c_code_folder]);
+%             
+%         end
+
+%         solver = casadi.nlpsol('solver', 'knitro', [c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
+%         disp('Loaded the solver with c code and simple bounds');
+%     end
     
     %% workaround for passing initial guess param since opti stack does not support parameterized initial guesses yet
     X_initial_guess =  casadi.MX.sym('x0',size(opti.advanced.arg.x0,1),size(opti.advanced.arg.x0,2));
