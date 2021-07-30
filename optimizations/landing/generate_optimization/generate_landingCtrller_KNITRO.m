@@ -8,14 +8,12 @@ rmpath(genpath('.')); % clear all previously added paths
 clear; clc; close all;
 
 %% flags
+make_casadi_function = true;
 show_animation = true;
-run_IK = true;
+run_IK = false;
 make_plots = false;
 
 %% add library paths
-% may need to specify os directory
-% addpath(genpath('../../utilities/casadi/casadi_windows'));
-% addpath(genpath('../../utilities/casadi/casadi_linux'));
 addpath(genpath('../../../utilities_general'));
 addpath(genpath('../codegen_casadi'));
 import casadi.*
@@ -68,10 +66,7 @@ q_term_min = opti.parameter(6,1);
 q_term_max = opti.parameter(6,1);
 qd_term_min = opti.parameter(6,1);
 qd_term_max = opti.parameter(6,1);
-QX = opti.parameter(12,1);              % weighting matrices
-QN = opti.parameter(12,1);   
-Qc = opti.parameter(3,1);
-Qf = opti.parameter(3,1);
+QN = opti.parameter(12,1);              % weighting matrices
 
 mu = opti.parameter();                  % robot/environment parameters
 l_leg_max = opti.parameter();
@@ -198,11 +193,7 @@ c_init_val = repmat(q_init_val(1:3),4,1)+...
 c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.2],1,4)';
 f_ref = zeros(12,1);
 
-QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
-QX_val = zeros(12, 1);
 QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
-Qc_val = [0 0 0]';
-Qf_val = [.001/200 .001/200 .0001/200]';
 
 mu_val = 1;
 l_leg_max_val = .35;
@@ -229,8 +220,7 @@ opti.set_value(qd_init, qd_init_val);
 opti.set_value(c_init, c_init_val);
 opti.set_value(q_term_min, q_term_min_val);opti.set_value(q_term_max, q_term_max_val);
 opti.set_value(qd_term_min, qd_term_min_val);opti.set_value(qd_term_max, qd_term_max_val);
-opti.set_value(QX, QX_val);opti.set_value(QN, QN_val);
-opti.set_value(Qc, Qc_val);opti.set_value(Qf, Qf_val);
+opti.set_value(QN, QN_val);
 opti.set_value(mu, mu_val);
 opti.set_value(l_leg_max, l_leg_max_val);
 opti.set_value(f_max,f_max_val);
@@ -239,53 +229,15 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
-load('prevSoln.mat'); 
-U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-opti.set_initial(opti.lam_g, lam_g_star);
-% opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:)],[Xref_val(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
+% opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
 
-s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
-    'tol', 1e-4,... % (1e-6), 1e-4 works well
-    'acceptable_tol', 1e-4,... % (1e-4)
-    'constr_viol_tol', 1e-3,... % (1e-6), 1e3 works well
-    'acceptable_iter', 5,... % (15), % 5 works well
-    'nlp_scaling_method','gradient-based',... {'gradient-based','none','equilibration-based'};
-    'nlp_scaling_max_gradient',50,... % (100), % 50 works well
-    'bound_relax_factor', 1e-6,... % (1e-8), % 1e-6 works well
-    'fixed_variable_treatment','relax_bounds',... % {'make_parameter','make_constraint','relax_bounds'}; % relax bounds works well
-    'bound_frac',5e-3,... % (1e-2), 5e-1 works well
-    'bound_push',5e-3,... % (1e-2), 5e-1 works well
-    'mu_strategy','adaptive',... % {'monotone','adaptive'}; % adaptive works very well
-    'mu_oracle','probing',... % {'quality-function','probing','loqo'}; % probing works very well
-    'fixed_mu_oracle','probing',... % {'average_compl','quality-function','probing','loqo'}; % probing decent
-    'adaptive_mu_globalization','obj-constr-filter',... % {'obj-constr-filter','kkt-error','never-monotone-mode'};
-    'mu_init',1e-1,... % [1e-1 1e-2 1]
-    'alpha_for_y','bound-mult',... % {'primal','bound-mult','min','max','full','min-dual-infeas','safer-min-dual-infeas','primal-and-full'}; % primal or bound-mult seems best
-    'alpha_for_y_tol',1e1,... % (1e1)
-    'recalc_y','no',... % {'no','yes'};
-    'max_soc',4,... % (4)
-    'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
-    'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
-    'linear_scaling_on_demand','yes',... % {'yes','no'};
-    'max_refinement_steps',10,... % (10)
-    'min_refinement_steps',1,... % (1)
-    'warm_start_init_point', 'yes'); % (no)
-
-s_opts.file_print_level = 3;
-s_opts.print_level = 3;
-s_opts.print_frequency_iter = 100;
-s_opts.print_timing_statistics ='no';
-opti.solver('ipopt',p_opts,s_opts);
-
- s_opts = struct('linsolver',4,... %4 works well
-            'outlev', 7,...
+% use knitro:
+s_opts = struct('linsolver',5,... % 5 works well (MA57)
+            'outlev', 0,...
             'strat_warm_start',0,...
             'algorithm',0,...
             'bar_murule',2,... % 5 works well
@@ -293,105 +245,187 @@ opti.solver('ipopt',p_opts,s_opts);
             'tuner',0,...
             'bar_feasible',0,... %0 works well
             'bar_directinterval',10,...
-            'maxit',800);%,...
+            'maxit',800);
+opti.solver('knitro', p_opts, s_opts);
 
-% opti.solver('knitro', p_opts, s_opts);
-
-%% solve
-
-disp_box('Solving with Opti Stack');
-tic
-sol = opti.solve_limited();
-toc
-
-%% partition solution
-X_star = sol.value(X);
-U_star = sol.value(U);
-q_star(1:6,:) = sol.value(q);
-qd_star = sol.value(qdot);
-lam_g_star = sol.value(opti.lam_g);
-save('prevSoln.mat','X_star','U_star', 'lam_g_star');
-
-q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
-
-% inverse kinematics, if called
-if run_IK
-    for i = 1:N-1
-        [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess);
-        if exitflag <= 0
-            q_star(7:18,i) = q_foot_guess;
+%% Generate .casadi Function
+if make_casadi_function
+    disp_box('Building Solver with (or without) Simple Bounds');
+    nlp_opts = p_opts;
+    nlp_opts.ipopt = s_opts;
+    solver = nlpsol('solver','ipopt',struct('x',opti.x,'p',opti.p,'f',opti.f,'g',opti.g),nlp_opts);
+    disp('Solver without Simple Bounds generated');
+    
+    % Generate c code for helper functions
+    use_code_gen = input('Use c-generated helper functions? ');
+    if use_code_gen
+        make_c_helper_functions = input('Generate c code for helper functions? (takes minutes) ');
+        
+        nlp_opts.expand = 0;%
+        c_code_folder  = '../codegen_casadi';
+        c_file_name = 'landingCtrller_KNITRO';
+        if make_c_helper_functions % if helper functions were never generated ||~isfile('casadi_functions_gen/nlp_full_kin_stance_auto_detect.so')
+            
+            disp_box('Generating c code');
+            
+            solver.generate_dependencies([c_file_name,'.c']);% generete helper functions
+            disp('Done generating .c file');
+            
+            disp('Compiling .c file...');
+            command = ['gcc -fPIC -shared -O3 ', c_file_name,'.c -o ',c_file_name,'.so'];
+            tic;
+            [status1,cmdout] = system(command,'-echo'); % compile the file % takes a few minutes
+            t_comp=toc;
+            fprintf('Done compiling in :%.2f s\n',t_comp)
+            
+            if(~isfolder(c_code_folder))
+                error(['Missing Folder: ',c_code_folder])
+            end
+            
+            % move generated files
+            status2 = system(['mv ',c_file_name,'.c ', c_code_folder]);
+            disp([' .c file was moved to folder ', c_code_folder]);
+            status3 = system(['mv ',c_file_name,'.so ', c_code_folder]);
+            disp([' .so file was moved to folder ', c_code_folder]);
+            
         end
-        q_star(7:18,i) = x;
+        
+        solver = casadi.nlpsol('solver', 'knitro', ['/',c_code_folder,'/',c_file_name,'.so'],nlp_opts); % load a new solver object which takes code generated dependancies
+        disp('Loaded the solver with c code and simple bounds');
     end
-    q_star(7:18,N) = q_star(7:18,N-1);
-else
-    q_star(7:18,:) = repmat(repmat(q_leg_home', 4, 1),1,N);
-end
-   
-t_star = zeros(1,N);
-for k = 2:N
-    t_star(k) = t_star(k-1) + dt_val(1,k-1);
-end
     
-if(show_animation)
-    showmotion(model,t_star,q_star)
-end
-
-
-%% plots
-f_star = U_star(13:24, :); p_star = U_star(1:12, :);
-
-if make_plots
+    %% workaround for passing initial guess param since opti stack does not support parameterized initial guesses yet
+    X_initial_guess =  casadi.MX.sym('x0',size(opti.advanced.arg.x0,1),size(opti.advanced.arg.x0,2));
     
-    % GRFs
-    figure; hold on;
-    for leg = 1:4
-        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
-        plot(t_star(1:end-1), f_star(xyz_idx(3), :));
+    res_sym = solver('x0',X_initial_guess,'p',opti.p,'lbg',opti.lbg,'ubg',opti.ubg);
+    % generate casadi function
+    f = casadi.Function('landingCtrller_KNITRO',{Xref, Uref, dt,...
+        q_min, q_max, qd_min, qd_max, q_init, qd_init, c_init,...
+        q_term_min, q_term_max, qd_term_min, qd_term_max,...
+        QN, X_initial_guess, mu, l_leg_max, f_max, mass,...
+        Ib, Ib_inv},{res_sym.x,res_sym.f});
+    
+    tic
+    % solve problem by calling f with numerial arguments (for verification)
+    disp_box('Solving Problem with Solver, c code and simple bounds');
+    [res.x,res.f] = f(Xref_val, Uref_val,...
+        dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
+        q_init_val, qd_init_val, c_init_val,...
+        q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
+        QN_val, [Xref_val(:);Uref_val(:)],...
+        mu_val, l_leg_max_val, f_max_val, mass_val,...
+        diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
+    toc
+    
+    % Decompose solution
+    res.x = full(res.x);
+    X_star = reshape(res.x(1:numel(X)),size(X));
+    q_star(1:6,:) = X_star(1:6,:);
+    q_star(7:18,:) = repmat(q_home(7:end),1,N);
+    t_star = zeros(1,N);
+    for k = 2:N
+        t_star(k) = t_star(k-1) + dt_val(1,k-1);
     end
-    xlabel('Time (s)'); ylabel('Force (N)');
-    title('Vertical ground reaction forces');
-    legend('FR', 'FL', 'BR', 'BL')
-    hold off;
     
-    % CoM posn
-    figure; hold on;
-    plot(t_star, q_star(1,:))
-    plot(t_star, q_star(2,:))
-    plot(t_star, q_star(3,:))
-    xlabel('Time (s)'); ylabel('Position (m)');
-    legend('X','Y','Z')
-    title('CoM Position')
-    hold off;
+    if(show_animation==1)
+        showmotion(model,t_star,q_star)
+    end
     
-    % CoM posn
-    figure; hold on;
-    plot(t_star, qd_star(4,:))
-    plot(t_star, qd_star(5,:))
-    plot(t_star, qd_star(6,:))
-    xlabel('Time (s)'); ylabel('Velocity (m/s)');
-    legend('X','Y','Z')
-    title('CoM Velocity')
-    hold off;
-    
-    % orientation
-    figure; hold on;
-    plot(t_star, rad2deg(q_star(4,:)))
-    plot(t_star, rad2deg(q_star(5,:)))
-    plot(t_star, rad2deg(q_star(6,:)))
-    xlabel('Time (s)'); ylabel('Orientation (degrees)');
-    legend('Roll', 'Pitch', 'Yaw')
-    title('CoM Orientation')
-    hold off;
-    
+    % Save function
+    save_casadi_function = input('Save Casadi Function? ');
+    if save_casadi_function
+        f.save('../codegen_casadi/landingCtrller_KNITRO.casadi');
+        save('landingCtrller_KNITRO.mat','f')
+    end
     
 end
-    
-    
-    
-    
-    
-    
-    
-    
+
+%% debugging tools
+
+% %% solve
+% disp_box('Solving with Opti Stack');
+% tic
+% sol = opti.solve_limited();
+% toc
+% 
+% %% partition solution
+% X_star = sol.value(X);
+% U_star = sol.value(U);
+% q_star(1:6,:) = sol.value(q);
+% qd_star = sol.value(qdot);
+% lam_g_star = sol.value(opti.lam_g);
+% % save('prevSoln.mat','X_star','U_star', 'lam_g_star');
+% 
+% q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
+% 
+% % inverse kinematics, if called
+% if run_IK
+%     for i = 1:N-1
+%         [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess);
+%         if exitflag <= 0
+%             q_star(7:18,i) = q_foot_guess;
+%         end
+%         q_star(7:18,i) = x;
+%     end
+%     q_star(7:18,N) = q_star(7:18,N-1);
+% else
+%     q_star(7:18,:) = repmat(repmat(q_leg_home', 4, 1),1,N);
+% end
+%    
+% t_star = zeros(1,N);
+% for k = 2:N
+%     t_star(k) = t_star(k-1) + dt_val(1,k-1);
+% end
+%     
+% if(show_animation)
+%     showmotion(model,t_star,q_star)
+% end
+% 
+% 
+% %% plots
+% f_star = U_star(13:24, :); p_star = U_star(1:12, :);
+% 
+% if make_plots
+%     
+%     % GRFs
+%     figure; hold on;
+%     for leg = 1:4
+%         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+%         plot(t_star(1:end-1), f_star(xyz_idx(3), :));
+%     end
+%     xlabel('Time (s)'); ylabel('Force (N)');
+%     title('Vertical ground reaction forces');
+%     legend('FR', 'FL', 'BR', 'BL')
+%     hold off;
+%     
+%     % CoM posn
+%     figure; hold on;
+%     plot(t_star, q_star(1,:))
+%     plot(t_star, q_star(2,:))
+%     plot(t_star, q_star(3,:))
+%     xlabel('Time (s)'); ylabel('Position (m)');
+%     legend('X','Y','Z')
+%     title('CoM Position')
+%     hold off;
+%     
+%     % CoM posn
+%     figure; hold on;
+%     plot(t_star, qd_star(4,:))
+%     plot(t_star, qd_star(5,:))
+%     plot(t_star, qd_star(6,:))
+%     xlabel('Time (s)'); ylabel('Velocity (m/s)');
+%     legend('X','Y','Z')
+%     title('CoM Velocity')
+%     hold off;
+%     
+%     % orientation
+%     figure; hold on;
+%     plot(t_star, rad2deg(q_star(4,:)))
+%     plot(t_star, rad2deg(q_star(5,:)))
+%     plot(t_star, rad2deg(q_star(6,:)))
+%     xlabel('Time (s)'); ylabel('Orientation (degrees)');
+%     legend('Roll', 'Pitch', 'Yaw')
+%     title('CoM Orientation')
+%     hold off;
+% end
     

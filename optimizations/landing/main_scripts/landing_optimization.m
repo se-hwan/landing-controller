@@ -239,17 +239,11 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
-load('prevSoln.mat'); 
-U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-opti.set_initial(opti.lam_g, lam_g_star);
-% opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:)],[Xref_val(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
+% opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
-
 s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'tol', 1e-4,... % (1e-6), 1e-4 works well
     'acceptable_tol', 1e-4,... % (1e-4)
@@ -259,8 +253,8 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'nlp_scaling_max_gradient',50,... % (100), % 50 works well
     'bound_relax_factor', 1e-6,... % (1e-8), % 1e-6 works well
     'fixed_variable_treatment','relax_bounds',... % {'make_parameter','make_constraint','relax_bounds'}; % relax bounds works well
-    'bound_frac',5e-3,... % (1e-2), 5e-1 works well
-    'bound_push',5e-3,... % (1e-2), 5e-1 works well
+    'bound_frac',5e-1,... % (1e-2), 5e-1 works well
+    'bound_push',5e-1,... % (1e-2), 5e-1 works well
     'mu_strategy','adaptive',... % {'monotone','adaptive'}; % adaptive works very well
     'mu_oracle','probing',... % {'quality-function','probing','loqo'}; % probing works very well
     'fixed_mu_oracle','probing',... % {'average_compl','quality-function','probing','loqo'}; % probing decent
@@ -278,8 +272,8 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'min_refinement_steps',1,... % (1)
     'warm_start_init_point', 'yes'); % (no)
 
-s_opts.file_print_level = 3;
-s_opts.print_level = 3;
+s_opts.file_print_level = 0;
+s_opts.print_level = 0;
 s_opts.print_frequency_iter = 100;
 s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);

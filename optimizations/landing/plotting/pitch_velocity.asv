@@ -2,74 +2,76 @@ clear all; clc; close all;
 
 %% load data
 addpath(genpath('../data'));
-data_p30_vZ = load('pitch_30_vZ.mat');
-data_p30_vZ = load('pitch_30_vZ.mat');
-data_p45_vX = load('pitch_30_vZ.mat');
-data_p30_vZ = load('pitch_30_vZ.mat');
-data_p30_vZ = load('pitch_30_vZ.mat');
 
+data_p0_vX = load('pitch_45_vX.mat');
+data_p5_vX = load('pitch_45_vX.mat');
+data_p10_vX = load('pitch_45_vX.mat');
+data_p15_vX = load('pitch_45_vX.mat');
+data_p20_vX = load('pitch_45_vX.mat');
+data_p25_vX = load('pitch_45_vX.mat');
+data_p30_vX = load('pitch_45_vX.mat');
+data_p35_vX = load('pitch_45_vX.mat');
+data_p40_vX = load('pitch_45_vX.mat');
+data_p45_vX = load('pitch_45_vX.mat');
+data_p50_vX = load('pitch_45_vX.mat');
+data_p55_vX = load('pitch_45_vX.mat');
+data_p60_vX = load('pitch_45_vX.mat');
+data_p45_vX = data_p45_vX.opt_sol;
+data_p45_vX = data_p45_vX.opt_sol;
+data_p45_vX = data_p45_vX.opt_sol;
+data_p45_vX = data_p45_vX.opt_sol;
+data_p45_vX = data_p45_vX.opt_sol;
+data_p45_vX = data_p45_vX.opt_sol;
+data_p45_vX = data_p45_vX.opt_sol;
+
+data_p45_vX = data_p45_vX.opt_sol;
 
 %% Plot Optimization results
-% if not swept, velocity is 
+% if not swept, velocity is -3 m/s starting from 0.6 m height
+
+vX_plot_data = cell(4, 1);
+for i = 1:4
+    vX_plot_data{i} = zeros(3, numel(data_p45_vX));
+end
+
+for i = 1:numel(data_p45_vX)
+    td_idx = zeros(4, 1);
+    for leg = 1:4
+        xyz_idx = 3*leg-2:3*leg;
+        
+        td_idx(leg) = find(data_p45_vX{i}.f_star(3*leg, :) > 1, 1);
+        state_i = data_p45_vX{i}.X_star(:, td_idx(leg));
+        p_rel_i = (data_p45_vX{i}.p_star(xyz_idx, td_idx(leg)) - data_p45_vX{i}.q_star(1:3, td_idx(leg))); 
+        
+        pitch_tdAngle_i = pi/4;                                   % pitch of robot at touchdown of leg i
+        vel_tdAngle_i = atan(state_i(10)/state_i(end));               % velocity angle of robot at touchdown of leg i
+        foot_tdAngle_i = atan(p_rel_i(1)/p_rel_i(3));
+        vX_plot_data{leg}(:, i) = [pitch_tdAngle_i; vel_tdAngle_i; foot_tdAngle_i];
+    end
+end
+
+
+figure;
+hold on;
+for i = 1:numel(data_p45_vX)
+    plot3(vX_plot_data{1}(1, i), vX_plot_data{1}(2, i), vX_plot_data{1}(3, i), 'bo')
+end
+xlabel('Pitch (rad)'); ylabel('Velocity angle (rad)'); zlabel('Foot angle')
+hold off;
+
+%% Visualization
+addpath(genpath('../../../utilities_general'));
+disp_box('Building Robot Model');
+params = get_robot_params('mc3D');
+model  = get_robot_model(params);
+model  = buildShowMotionModelMC3D(params, model, 0);
+t_star = linspace(0, 0.6, 41);
+show_animation = true;
+
+q_star = data_p45_vX{1}.q_star;            % load desired trajectory to check here
+
 if show_animation
     showmotion(model,t_star,q_star)
 end
 
-td_idx = zeros(4, 1);
-td(1) = find(f_star(3,:)>1, 1); td(2) = find(f_star(6,:)>1, 1);
-td(3) = find(f_star(9,:)>1, 1); td(4) = find(f_star(12,:)>1, 1);
-
-figure;
-hold on;
-p_td = zeros(3, 4);
-for leg = 1:model.NLEGS
-    xyz_idx = 3*leg-2:3*leg;
-    b_R_w = rpyToRotMat(q_star(4:6, td(leg)))';
-    p_td(:, leg) = b_R_w*(p_star(xyz_idx, td(leg)) - q_star(1:3, td(leg)));
-    plot3(p_td(1, leg), p_td(2, leg), p_td(3, leg),'o');    
-end
-legend('FR','FL','BR','BL')
-hold off;
-
-p_td
-
-
-figure;
-hold on;
-plot(t_star(1:end-1), U_star(15, :),'ro-')
-plot(t_star(1:end-1), U_star(18, :),'bo-')
-plot(t_star(1:end-1), U_star(21, :),'go-')
-plot(t_star(1:end-1), U_star(24, :),'ko-')
-xlabel('Time (s)'); ylabel('Force (N)'); 
-legend('FR', 'FL', 'BR', 'BL')
-hold off;
-% 
-% figure;
-% hold on;
-% plot(t_star(1:end-1), U_star(15, :))
-% plot(t_star(1:end-1), U_star(16, :))
-% plot(t_star(1:end-1), U_star(17, :))
-% xlabel('Time (s)'); ylabel('Force FR (N)'); 
-% legend('x','y','z')
-% hold off;
-% 
-% figure;
-% hold on;
-% plot(t_star(1:end-1), U_star(3, :))
-% plot(t_star(1:end-1), U_star(6, :))
-% plot(t_star(1:end-1), U_star(9, :))
-% plot(t_star(1:end-1), U_star(12, :))
-% xlabel('Time (s)'); ylabel('Foot height (m)'); 
-% legend('FR', 'FL', 'BR', 'BL')
-% hold off;
-% 
-% figure;
-% hold on;
-% plot(t_star(1:end-1), U_star(15, :)/max(U_star(15,:)))
-% plot(t_star(1:end-1), U_star(1, :))
-% plot(t_star(1:end-1), U_star(2, :))
-% plot(t_star(1:end-1), U_star(3, :))
-% xlabel('Time (s)'); ylabel('Foot posn (m)'); 
-% legend('F_z','x', 'y', 'z')
-% hold off;
 
