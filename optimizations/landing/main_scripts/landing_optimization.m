@@ -27,7 +27,7 @@ model  = get_robot_model(params);
 model  = buildShowMotionModel(params, model);
 
 %% contact schedule parameters
-N = 18; 
+N = 21; 
 T = 0.6;
 dt_val = repmat(T/(N-1),1,N-1);
 
@@ -176,10 +176,10 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0 0 -pi/6]';
-qd_init_val = [0 4 5 1.3 -2 -2.]';
+q_init_val = [0 0 0.6 0 0.1309 0]';
+qd_init_val = [0 0 0 0 0 -3]';
 
-q_min_val = [-10 -10 0.1 -10 -10 -10];
+q_min_val = [-10 -10 0.15 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
@@ -189,7 +189,7 @@ q_term_max_val = [10 10 5 0.1 0.1 10];
 qd_term_min_val = [-10 -10 -10 -40 -40 -40];
 qd_term_max_val = [10 10 10 40 40 40];
 
-q_term_ref = [0 0 0.275, 0 0 0]';
+q_term_ref = [0 0 0.2, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
 
 c_init_val = repmat(q_init_val(1:3),4,1)+...
@@ -206,7 +206,7 @@ Qf_val = [.001/200 .001/200 .0001/200]';
 
 mu_val = 1;
 l_leg_max_val = .35;
-f_max_val = 200;
+f_max_val = 225;
 
 %% set parameter values
 for i = 1:6
@@ -239,11 +239,10 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
-% load('prevSoln.mat'); 
-% U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
+load('prevSoln.mat'); 
+U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
 % opti.set_initial([U(:)],[U_star_guess(:)]);
 % opti.set_initial([X(:)],[X_star_guess(:)]);
-% opti.set_initial(opti.lam_g, lam_g_star);
 opti.set_initial([U(:)],[Uref_val(:)]);
 % opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 

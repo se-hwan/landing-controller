@@ -25,14 +25,16 @@ q_home = [0 0 0 0 0 0 q_leg_home q_leg_home q_leg_home q_leg_home]';
 mass_val = Ibody_val(6,6);
 Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 
-N = 18; % N = 11
+N = 21; % N = 11
 T = 0.6; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
 
 q_init_val = [0 0 0.6 0 0 0]';
 qd_init_val = [0 0 0 1.5 0 -3]';
+q_init_val = [0 0 0.6 0 0 -pi/6]';
+qd_init_val = [0 4 5 1.3 -2 -3.]';
 
-q_min_val = [-10 -10 0.15 -10 -10 -10];
+q_min_val = [-10 -10 0.10 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
@@ -42,11 +44,8 @@ q_term_max_val = [10 10 5 0.1 0.1 10];
 qd_term_min_val = [-10 -10 -10 -40 -40 -40];
 qd_term_max_val = [10 10 10 40 40 40];
 
-q_term_ref = [0 0 0.2, 0 0 0]';
+q_term_ref = [0 0 0.275, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
-
-c_init_val = repmat(q_init_val(1:3),4,1)+...
-    diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -q_init_val(3)],1,4)';
 
 c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.35],1,4)';
 f_ref = zeros(12,1);
@@ -74,13 +73,12 @@ end
 
 %% solve optimization
 
-    
 tic
 % solve problem by calling f with numerial arguments (for verification)
 disp_box('Solving Problem with Solver, c code and simple bounds');
 [res.x,res.f] = f(Xref_val, Uref_val,...
     dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
-    q_init_val, qd_init_val, c_init_val,...
+    q_init_val, qd_init_val, ...
     q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
     QN_val, [Xref_val(:);Uref_val(:)],...
     mu_val, l_leg_max_val, f_max_val, mass_val,...
@@ -105,6 +103,8 @@ for k = 2:N
     t_star(k) = t_star(k-1) + dt_val(1,k-1);
 end
 
+save('prevSoln.mat','X_star','U_star');
+
 %% partition solution
 % inverse kinematics, if called
 
@@ -126,59 +126,4 @@ end
 if show_animation
     showmotion(model,t_star,q_star)
 end
-
-td_idx = zeros(4, 1);
-td(1) = find(f_star(3,:)>1, 1); td(2) = find(f_star(6,:)>1, 1);
-td(3) = find(f_star(9,:)>1, 1); td(4) = find(f_star(12,:)>1, 1);
-
-figure;
-hold on;
-p_td = zeros(3, 4);
-for leg = 1:model.NLEGS
-    xyz_idx = 3*leg-2:3*leg;
-    b_R_w = rpyToRotMat(q_star(4:6, td(leg)))';
-    p_td(:, leg) = b_R_w*(p_star(xyz_idx, td(leg)) - q_star(1:3, td(leg)));
-    plot3(p_td(1, leg), p_td(2, leg), p_td(3, leg),'o');    
-end
-legend('FR','FL','BR','BL')
-hold off;
-
-figure;
-hold on;
-plot(t_star(1:end-1), U_star(15, :),'ro-')
-plot(t_star(1:end-1), U_star(18, :),'bo-')
-plot(t_star(1:end-1), U_star(21, :),'go-')
-plot(t_star(1:end-1), U_star(24, :),'ko-')
-xlabel('Time (s)'); ylabel('Force (N)'); 
-legend('FR', 'FL', 'BR', 'BL')
-hold off;
-% 
-% figure;
-% hold on;
-% plot(t_star(1:end-1), U_star(15, :))
-% plot(t_star(1:end-1), U_star(16, :))
-% plot(t_star(1:end-1), U_star(17, :))
-% xlabel('Time (s)'); ylabel('Force FR (N)'); 
-% legend('x','y','z')
-% hold off;
-% 
-% figure;
-% hold on;
-% plot(t_star(1:end-1), U_star(3, :))
-% plot(t_star(1:end-1), U_star(6, :))
-% plot(t_star(1:end-1), U_star(9, :))
-% plot(t_star(1:end-1), U_star(12, :))
-% xlabel('Time (s)'); ylabel('Foot height (m)'); 
-% legend('FR', 'FL', 'BR', 'BL')
-% hold off;
-% 
-% figure;
-% hold on;
-% plot(t_star(1:end-1), U_star(15, :)/max(U_star(15,:)))
-% plot(t_star(1:end-1), U_star(1, :))
-% plot(t_star(1:end-1), U_star(2, :))
-% plot(t_star(1:end-1), U_star(3, :))
-% xlabel('Time (s)'); ylabel('Foot posn (m)'); 
-% legend('F_z','x', 'y', 'z')
-% hold off;
 
