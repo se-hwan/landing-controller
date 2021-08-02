@@ -29,7 +29,7 @@ function parameters = generate_optimization_parameters()
 
     QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 
-    mu_val = 1;
+    mu_val = .4;
     l_leg_max_val = .4;
     f_max_val = 225;
 

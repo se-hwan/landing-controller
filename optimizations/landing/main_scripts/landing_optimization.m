@@ -136,6 +136,7 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     opti.subject_to(qdot(1:3,k+1) - qdk(1:3) == omegaDot * dt(k));
     
     % non-negative GRF
+    
     opti.subject_to(f_max*ones(4,1) >= fk([3 6 9 12]) >= zeros(4,1));
 
     % contact constraints
@@ -204,7 +205,7 @@ QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
 Qf_val = [.001/200 .001/200 .0001/200]';
 
-mu_val = 1;
+mu_val = .4;
 l_leg_max_val = .35;
 f_max_val = 225;
 
