@@ -28,7 +28,7 @@ model  = buildShowMotionModel(params, model);
 
 %% contact schedule parameters
 N = 21; 
-T = 0.8;
+T = 0.6;
 dt_val = repmat(T/(N-1),1,N-1);
 
 %% optimization
@@ -89,17 +89,17 @@ p_hip = [0.19;-0.1;-0.2;...
 cost = casadi.MX(0);             % initialize cost
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
-gamma = 0.95;   % discount
-
-for k = 1:(N-1)                  % running cost
-    X_err = X(:,k) - Xref(:,k);                                         % floating base error
-    pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
-    U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
-    cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
-        pf_err'*diag(repmat(Qc,4,1))*pf_err+...
-        U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
-    
-end
+% gamma = 0.95;   % discount
+% 
+% for k = 1:(N-1)                  % running cost
+%     X_err = X(:,k) - Xref(:,k);                                         % floating base error
+%     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+%     cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
+%         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
+%         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
+%     
+% end
 opti.minimize(cost);             % set objective
 
 %% initial state constraint
@@ -108,11 +108,11 @@ opti.subject_to(qdot(1:6,1) == qd_init);    % initial ang. vel. + lin. vel.
 
 %% terminal state constraints
 
-q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
-q_term_max_val = [10 10 5 0.1 0.1 10];
-
-qd_term_min_val = [-10 -10 -10 -.5 -.5 -.5];
-qd_term_max_val = [10 10 10 .5 .5 .5];
+% q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
+% q_term_max_val = [10 10 5 0.1 0.1 10];
+% 
+% qd_term_min_val = [-10 -10 -10 -.5 -.5 -.5];
+% qd_term_max_val = [10 10 10 .5 .5 .5];
 
 opti.subject_to(q(:,N) >= q_term_min);      % bounds terminal state to be within specified min/max values
 opti.subject_to(q(:,N) <= q_term_max);
@@ -193,18 +193,18 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0 0 0]';
-qd_init_val = [0 0 0 0 0 -2]';
+q_init_val = [0 0 0.6 0 pi/3 0]';
+qd_init_val = [0 0 0 0 0 -4]';
 
 q_min_val = [-10 -10 0.15 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
 
-% q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
-% q_term_max_val = [10 10 5 0.1 0.1 10];
-% qd_term_min_val = [-10 -10 -10 -40 -40 -40];
-% qd_term_max_val = [10 10 10 40 40 40];
+q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
+q_term_max_val = [10 10 5 0.1 0.1 10];
+qd_term_min_val = [-10 -10 -10 -40 -40 -40];
+qd_term_max_val = [10 10 10 40 40 40];
 
 q_term_ref = [0 0 0.2, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
@@ -223,7 +223,7 @@ Qf_val = [.001/200 .001/200 .1/200]';
 
 mu_val = .4;
 l_leg_max_val = .35;
-f_max_val = 225;
+f_max_val = 200;
 
 %% set parameter values
 for i = 1:6
@@ -286,7 +286,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -313,7 +313,6 @@ opti.solver('ipopt',p_opts,s_opts);
 % opti.solver('knitro', p_opts, s_opts);
 
 %% solve
-
 disp_box('Solving with Opti Stack');
 tic
 sol = opti.solve_limited();
@@ -357,17 +356,16 @@ end
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    [J_foot{1, i}, J_foot{2, i}, J_foot{3, i}, J_foot{4, i}] = get_foot_jacobians(model, q_star(:, i), 0);
+    J_f = get_foot_jacobians_mc(model, params, q_star(:, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
-        torque(xyz_idx, i) = J_foot{leg, i}'*-f_star(xyz_idx, i);
+        torque(xyz_idx, i) = J_f{leg}'*-f_star(xyz_idx, i);
     end
 end
 
 
 
 %% plots
-
 
 if make_plots
     

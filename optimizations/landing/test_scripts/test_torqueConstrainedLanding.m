@@ -87,17 +87,17 @@ p_hip = [0.19;-0.1;-0.2;...
 cost = casadi.MX(0);             % initialize cost
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
-gamma = 0.95;   % discount
-
-for k = 1:(N-1)                  % running cost
-    X_err = X(:,k) - Xref(:,k);                                         % floating base error
-    pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
-    U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
-    cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
-        pf_err'*diag(repmat(Qc,4,1))*pf_err+...
-        U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
-    
-end
+% gamma = 0.95;   % discount
+% 
+% for k = 1:(N-1)                  % running cost
+%     X_err = X(:,k) - Xref(:,k);                                         % floating base error
+%     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
+%     cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
+%         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
+%         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
+%     
+% end
 opti.minimize(cost);             % set objective
 
 %% initial state constraint
@@ -194,9 +194,9 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     
     
     
-    [JFR,JFL,JHR,JHL] = get_foot_jacobians( model, [qk; jposk], 1);
+    J_f = get_foot_jacobians_mc( model, params, jposk);
     % Joint Torques
-    tau_joint = [JFR'*(-fk(1:3));JFL'*(-fk(4:6));JHR'*(-fk(7:9));JHL'*(-fk(10:12))];
+    tau_joint = [J_f{1}'*(-fk(1:3));J_f{2}'*(-fk(4:6));J_f{3}'*(-fk(7:9));J_f{4}'*(-fk(10:12))];
     opti.subject_to(tau_joint <= model.tauMax);
     opti.subject_to(tau_joint >= -model.tauMax);
     
@@ -214,7 +214,7 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 
-jpos_min = repmat([-pi/4, -pi/2, deg2rad(30)]', 4, 1);
+jpos_min = repmat([-pi/4, -pi/2, deg2rad(5)]', 4, 1);
 jpos_max = repmat([pi/8, 0, 3*pi/4]', 4, 1);
 
 
@@ -242,7 +242,7 @@ end
 
 %% reference trajectories
 q_init_val = [0 0 0.6 0 0 0]';
-qd_init_val = [0 0 0 0 1 -2.]';
+qd_init_val = [0 0 0 0 0 -1.]';
 
 q_min_val = [-10 -10 0.15 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -303,35 +303,35 @@ opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 %% initial guess
 
 %% load function
-f = Function.load('../codegen_casadi/landingCtrller_IPOPT.casadi');
-tic
-% solve problem by calling f with numerial arguments (for verification)
-disp_box('Solving Problem with Solver, c code and simple bounds');
-[res.x,res.f] = f(Xref_val, Uref_val,...
-    dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
-    q_init_val, qd_init_val, ...
-    q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
-    QN_val, [Xref_val(:);Uref_val(:)],...
-    mu_val, l_leg_max_val, f_max_val, mass_val,...
-    diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
-toc
-
-    
-% Decompose solution
-X_tmp = zeros(12, N);
-U_tmp = zeros(6*model.NLEGS, N-1);
-
-res.x = full(res.x);
-X_star = reshape(res.x(1:numel(X_tmp)),size(X_tmp));
-U_star = reshape(res.x(numel(X_tmp)+1:numel(X_tmp)+numel(U_tmp)), size(U_tmp));
+% f = Function.load('../codegen_casadi/landingCtrller_IPOPT.casadi');
+% tic
+% % solve problem by calling f with numerial arguments (for verification)
+% disp_box('Solving Problem with Solver, c code and simple bounds');
+% [res.x,res.f] = f(Xref_val, Uref_val,...
+%     dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
+%     q_init_val, qd_init_val, ...
+%     q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
+%     QN_val, [Xref_val(:);Uref_val(:)],...
+%     mu_val, l_leg_max_val, f_max_val, mass_val,...
+%     diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
+% toc
+% 
+%     
+% % Decompose solution
+% X_tmp = zeros(12, N);
+% U_tmp = zeros(6*model.NLEGS, N-1);
+% 
+% res.x = full(res.x);
+% X_star = reshape(res.x(1:numel(X_tmp)),size(X_tmp));
+% U_star = reshape(res.x(numel(X_tmp)+1:numel(X_tmp)+numel(U_tmp)), size(U_tmp));
 
 load('prevSoln.mat'); 
-U_star_guess = U_star; X_star_guess = X_star;  jpos_star_guess = jpos_star;
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
+% U_star_guess = U_star; X_star_guess = X_star;  jpos_star_guess = jpos_star;
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+% opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
 opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-% opti.set_initial([U(:)],[Uref_val(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
 % opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
@@ -357,7 +357,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -381,7 +381,7 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',800);%,...
 
-opti.solver('knitro', p_opts, s_opts);
+% opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 
@@ -432,7 +432,7 @@ end
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    [J_foot{1, i}, J_foot{2, i}, J_foot{3, i}, J_foot{4, i}] = get_foot_jacobians(model, q_star(:, i), 0);
+    [J_foot{1, i}, J_foot{2, i}, J_foot{3, i}, J_foot{4, i}] = get_foot_jacobians_mc(model, q_star(:, i), 0);
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
         torque(xyz_idx, i) = J_foot{leg, i}'*-f_star(xyz_idx, i);

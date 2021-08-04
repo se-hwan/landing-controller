@@ -21,7 +21,7 @@ model  = buildShowMotionModel(params, model);
 %% test configurations and parameters
 fb_test = [0 0 0.5 0 0 0]';
 q_test = repmat([0; -deg2rad(85); deg2rad(160)], 4, 1);
-q_test = repmat([0; -pi/4; pi/2], 4, 1);
+q_test = repmat([0; -pi/4; pi/3], 4, 1);
 
 showmotion(model,[0, 5],repmat([fb_test; q_test], 1, 2))
 
