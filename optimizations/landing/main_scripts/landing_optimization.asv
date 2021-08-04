@@ -92,13 +92,12 @@ cost = cost + X_err'*diag(QN)*X_err;
 % gamma = 0.95;   % discount
 % 
 % for k = 1:(N-1)                  % running cost
-% %     X_err = X(:,k) - Xref(:,k);                                         % floating base error
-% %     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
+%     X_err = X(:,k) - Xref(:,k);                                         % floating base error
+%     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
 %     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
-% %     cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
-% %         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
-% %         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
-%     cost = cost + U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
+%     cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
+%         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
+%         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
 %     
 % end
 opti.minimize(cost);             % set objective
@@ -194,8 +193,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/4 0]';
-qd_init_val = [0 0 0 0 0 -3]';
+q_init_val = [0 0 0.6 0 0 0]';
+qd_init_val = [0 0 0 0 0 -3.5]';
 
 q_min_val = [-10 -10 0.15 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -220,11 +219,11 @@ QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
 QX_val = zeros(12, 1);
 QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
-Qf_val = [.001/200 .001/200 .001/200]';
+Qf_val = [.001/200 .001/200 .1/200]';
 
 mu_val = .4;
 l_leg_max_val = .35;
-f_max_val = 300;
+f_max_val = 250;
 
 %% set parameter values
 for i = 1:6
@@ -259,9 +258,9 @@ opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 %% initial guess
 load('prevSoln.mat'); 
 U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-% opti.set_initial([U(:)],[Uref_val(:)]);
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
 % opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
@@ -311,7 +310,7 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',800);%,...
 
-% opti.solver('knitro', p_opts, s_opts);
+opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 disp_box('Solving with Opti Stack');

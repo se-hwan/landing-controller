@@ -19,12 +19,14 @@ model  = get_robot_model(params);
 model  = buildShowMotionModel(params, model);
 
 %% test configurations and parameters
-fb_test = [0 0 0.5 0 pi/3 pi/6]';
+fb_test = [0.5 0 0.5 0 pi/4 pi/6]';
 q_test = repmat([0; -pi/4; pi/2], 4, 1);
 
 showmotion(model,[0, 5],repmat([fb_test; q_test], 1, 2))
 
 p_foot_fwd_kin = get_forward_kin_foot(model, [fb_test; q_test]);
+
+p_foot_fwd_kin_mc = get_forward_kin_foot_mc(model, params, [fb_test; q_test])
 
 foot_choice = 1;
 
