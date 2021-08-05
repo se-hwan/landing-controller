@@ -89,8 +89,8 @@ p_hip = [0.19;-0.1;-0.2;...
 cost = casadi.MX(0);             % initialize cost
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
-% gamma = 0.95;   % discount
-% 
+gamma = 0.95;   % discount
+
 % for k = 1:(N-1)                  % running cost
 % %     X_err = X(:,k) - Xref(:,k);                                         % floating base error
 % %     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
@@ -258,10 +258,10 @@ opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
 load('prevSoln.mat'); 
-U_star_guess = U_star; X_star_guess = X_star; lam_g_star_guess = lam_g_star;
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-% opti.set_initial([U(:)],[Uref_val(:)]);
+% U_star_guess = U_star; X_star_guess = X_star;
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
 % opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
@@ -287,7 +287,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -326,7 +326,7 @@ q_star(1:6,:) = sol.value(q);
 qd_star = sol.value(qdot);
 f_star = U_star(13:24, :); p_star = U_star(1:12, :);
 lam_g_star = sol.value(opti.lam_g);
-save('prevSoln.mat','X_star','U_star', 'lam_g_star');
+
 
 q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
 
@@ -357,14 +357,19 @@ end
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    J_f = get_foot_jacobians_mc(model, params, q_star(:, i));
+    J_f = get_foot_jacobians_mc(model, params, q_star(7:18, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
         torque(xyz_idx, i) = J_f{leg}'*-f_star(xyz_idx, i);
     end
 end
 
+cs = zeros(4, N); cs(:, end) = ones(4, 1);
+for leg = 1:4
+    cs(leg, 1:end-1) = f_star(3*leg, :) > 1;
+end
 
+save('prevSoln.mat','X_star','U_star', 'q_star', 'cs');
 
 %% plots
 

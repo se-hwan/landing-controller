@@ -25,7 +25,7 @@ model  = buildShowMotionModel(params, model);
 
 %% contact schedule parameters
 N = 21; 
-T = .8;
+T = .6;
 dt_val = repmat(T/(N-1),1,N-1);
 
 %% optimization
@@ -87,7 +87,7 @@ p_hip = [0.19;-0.1;-0.2;...
 cost = casadi.MX(0);             % initialize cost
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
-gamma = 0.95;   % discount
+gamma = 1;   % discount
 
 % for k = 1:(N-1)                  % running cost
 % %     X_err = X(:,k) - Xref(:,k);                                         % floating base error
@@ -158,6 +158,9 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 
     % contact constraints
     R_yaw = rpyToRotMat([0 0 rpyk(3)]);
+    
+    J_f = get_foot_jacobians_mc( model, params, jposk);
+    
     for leg = 1:model.NLEGS
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
         opti.subject_to(ck(xyz_idx(3)) >= 0);
@@ -178,6 +181,11 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
         opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0);
         opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
+        
+        tau_leg = J_f{leg}'*(-fk(xyz_idx));
+        opti.subject_to(-model.tauMax(1) <= tau_leg(1) <= model.tauMax(1));
+        opti.subject_to(-model.tauMax(2) <= tau_leg(2) <= model.tauMax(2));
+        opti.subject_to(-model.tauMax(3) <= tau_leg(3) <= model.tauMax(3));
     end
 
     % friction Constraints, Eq (7k)
@@ -191,26 +199,6 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     opti.subject_to(qk >= q_min);
     opti.subject_to(qdk <= qd_max);
     opti.subject_to(qdk >= qd_min);
-    
-    
-    
-    J_f = get_foot_jacobians_mc( model, params, jposk);
-    % Joint Torques
-    tau_joint = [J_f{1}'*(-fk(1:3));J_f{2}'*(-fk(4:6));J_f{3}'*(-fk(7:9));J_f{4}'*(-fk(10:12))];
-    opti.subject_to(tau_joint <= model.tauMax);
-    opti.subject_to(tau_joint >= -model.tauMax);
-    
-%     tauDesMotor = tau_joint ./ repmat(model.gr,4,1);
-%     iDes = tauDesMotor ./ (1.5*repmat(model.kt,4,1));
-%     bemf = qdk(7:18) .* repmat(model.gr,4,1) .* repmat(model.kt,4,1) * 2.0;
-%     vDes = iDes .* repmat(model.Rm,4,1) + bemf;
-%     opti.subject_to(vDes <= model.batteryV);
-%     opti.subject_to(vDes >= -model.batteryV);
-%     tauActMotor = 1.5*repmat(model.kt,4,1).*(vDes - bemf) ./ repmat(model.Rm,4,1);
-%     % torque saturation
-%     opti.subject_to(tauActMotor <= model.tauMax);
-%     opti.subject_to(tauActMotor >= -model.tauMax);
-    
 end
 
 
@@ -221,27 +209,25 @@ jpos_max = repmat([pi/8, -pi/6, 3*pi/4]', 4, 1);
 disp_box('Building kinematic constraints');
 % Kinematic Constraints
 for k = 1:N-1
-    
-%     disp([num2str(k) ' of ' num2str(opt_timing.N)]);
-    
+  
     jposk = jpos(:,k);
     qk = q(:, k);
     ck = c(:,k);
     
     pFootk = get_forward_kin_foot_mc(model, params, [qk; jposk]);
     footPosk = [pFootk{1};pFootk{2};pFootk{3};pFootk{4}];
-    opti.subject_to(ck - footPosk >= -0.001); % Eq (7i)
-    opti.subject_to(ck - footPosk <= 0.001); % Eq (7i)
+    opti.subject_to(ck - footPosk >= -0.01); % Eq (7i)
+    opti.subject_to(ck - footPosk <= 0.01); % Eq (7i)
     opti.subject_to(jposk >= jpos_min);
     opti.subject_to(jposk <= jpos_max);
     
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/6 0]';
+q_init_val = [0 0 0.6 0.25 0 0]';
 qd_init_val = [0 0 0 0 0 -1]';
 
-q_min_val = [-10 -10 0.075 -10 -10 -10];
+q_min_val = [-10 -10 0.10 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
@@ -263,7 +249,7 @@ QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
 Qf_val = [.001/200 .001/200 .001/200]';
 
-mu_val = .4;
+mu_val = 1;
 l_leg_max_val = .4;
 f_max_val = 225;
 
@@ -300,36 +286,16 @@ opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 %% initial guess
 
 %% load function
-% f = Function.load('../codegen_casadi/landingCtrller_IPOPT.casadi');
-% tic
-% % solve problem by calling f with numerial arguments (for verification)
-% disp_box('Solving Problem with Solver, c code and simple bounds');
-% [res.x,res.f] = f(Xref_val, Uref_val,...
-%     dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
-%     q_init_val, qd_init_val, ...
-%     q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
-%     QN_val, [Xref_val(:);Uref_val(:)],...
-%     mu_val, l_leg_max_val, f_max_val, mass_val,...
-%     diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
-% toc
-% 
-%     
-% % Decompose solution
-% X_tmp = zeros(12, N);
-% U_tmp = zeros(6*model.NLEGS, N-1);
-% 
-% res.x = full(res.x);
-% X_star = reshape(res.x(1:numel(X_tmp)),size(X_tmp));
-% U_star = reshape(res.x(numel(X_tmp)+1:numel(X_tmp)+numel(U_tmp)), size(U_tmp));
-
-load('prevSoln.mat');  jpos_star_guess = jpos_star;
+load('prevSoln.mat');  
+%jpos_star_guess = q_star(7:18,1:end-1);
+jpos_star_guess = jpos_star; 
 U_star_guess = U_star; X_star_guess = X_star; 
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
-% opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-% opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+% opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
+opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
+opti.set_initial([U(:)],[Uref_val(:)]);
+opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -354,17 +320,17 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
     'min_refinement_steps',1,... % (1)
-    'warm_start_init_point', 'no'); % (no)
+    'warm_start_init_point', 'yes'); % (no)
 
 s_opts.file_print_level = 3;
-s_opts.print_level = 3;
-s_opts.print_frequency_iter = 100;
-s_opts.print_timing_statistics ='no';
+s_opts.print_level = 4;
+s_opts.print_frequency_iter = 1;
+s_opts.print_timing_statistics ='yes';
 opti.solver('ipopt',p_opts,s_opts);
 
  s_opts = struct('linsolver',4,... %4 works well
@@ -429,19 +395,14 @@ end
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    J_f = get_foot_jacobians_mc(model, params, q_star(:, i));
+    J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
-        torque(xyz_idx, i) = J_f{leg}'*-f_star(xyz_idx, i);
+        torque(xyz_idx, i) = J_f{leg}'*(-f_star(xyz_idx, i));
     end
 end
 
-
-
-
-
 %% plots
-
 
 if make_plots
     
