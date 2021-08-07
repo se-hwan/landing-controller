@@ -30,9 +30,9 @@ T = 0.6; % T = 0.22
 dt_val = repmat(T/(N-1),1,N-1);
 
 q_init_val = [0 0 0.6 0 0 0]';
-qd_init_val = [0 0 0 1.5 0 -3]';
-q_init_val = [0 0 0.6 0 0 -pi/6]';
-qd_init_val = [0 4 5 1.3 -2 -3.]';
+qd_init_val = [0 0 0 0 0 -5]';
+% q_init_val = [0 0 0.35 0 0 -pi/6]';
+% qd_init_val = [0 4 5 1.3 -2 -1.]';
 
 q_min_val = [-10 -10 0.10 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -44,7 +44,7 @@ q_term_max_val = [10 10 5 0.1 0.1 10];
 qd_term_min_val = [-10 -10 -10 -40 -40 -40];
 qd_term_max_val = [10 10 10 40 40 40];
 
-q_term_ref = [0 0 0.275, 0 0 0]';
+q_term_ref = [0 0 0.25, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
 
 c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.35],1,4)';
@@ -56,9 +56,9 @@ QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
 Qf_val = [0.0001 0.0001 0.001]';
 
-mu_val = 1;
+mu_val = .5;
 l_leg_max_val = .35;
-f_max_val = 250;
+f_max_val = 500;
 
 for i = 1:6
     Xref_val(i,:)   = linspace(q_init_val(i),q_term_ref(i),N);
@@ -92,6 +92,7 @@ U = zeros(6*model.NLEGS, N-1);
 res.x = full(res.x);
 X_star = reshape(res.x(1:numel(X)),size(X));
 q_star(1:6,:) = X_star(1:6,:);
+qd_star(1:6,:) = X_star(7:12,:);
 q_star(7:18,:) = repmat(q_home(7:end),1,N);
 U_star = reshape(res.x(numel(X)+1:numel(X)+numel(U)), size(U));
 t_star = zeros(1,N);
@@ -127,3 +128,120 @@ if show_animation
     showmotion(model,t_star,q_star)
 end
 
+J_foot = cell(4, N-1);
+torque = zeros(12, N-1);
+for i = 1:N-1
+    R_world_to_body = rpyToRotMat(q_star(4:6, i))';
+    J_f = get_foot_jacobians_mc(model, params, q_star(7:18, i));
+    for leg = 1:4
+        xyz_idx = 3*leg-2:3*leg;
+        torque(xyz_idx, i) = J_f{leg}'*(-R_world_to_body*f_star(xyz_idx, i));
+    end
+end
+
+cs = zeros(4, N); cs(:, end) = ones(4, 1);
+for leg = 1:4
+    cs(leg, 1:end-1) = f_star(3*leg, :) > 1;
+end
+
+save('prevSoln.mat','X_star','U_star', 'q_star', 'cs');
+
+%% plots
+
+make_plots = true;
+
+if make_plots
+        
+    % torque limits
+    figure; hold on;
+    plot(t_star(1:end-1), [torque(1, :);torque(4, :);torque(7, :);torque(10, :)], 'r-')
+    plot(t_star(1:end-1), model.tauMax(1)*ones(1, N-1), 'r--')
+    plot(t_star(1:end-1), -model.tauMax(1)*ones(1, N-1), 'r--')
+    plot(t_star(1:end-1), [torque(2, :);torque(5, :);torque(8, :);torque(11, :)], 'g-')
+    plot(t_star(1:end-1), model.tauMax(2)*ones(1, N-1), 'g--')
+    plot(t_star(1:end-1), -model.tauMax(2)*ones(1, N-1), 'g--')
+    plot(t_star(1:end-1), [torque(3, :);torque(6, :);torque(9, :);torque(12, :)], 'b-')
+    plot(t_star(1:end-1), model.tauMax(3)*ones(1, N-1), 'b--')
+    plot(t_star(1:end-1), -model.tauMax(3)*ones(1, N-1), 'b--')
+    xlabel('Time (s)'); ylabel('Torque (Nm)')
+    title("Torque Limits")
+    hold off;
+
+    % Vertical GRFs 
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(3), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('Vertical ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    % X GRFs
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(1), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('X ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    % Y GRFs
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(2), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('Y ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    % CoM posn
+    figure; hold on;
+    plot(t_star, q_star(1,:))
+    plot(t_star, q_star(2,:))
+    plot(t_star, q_star(3,:))
+    xlabel('Time (s)'); ylabel('Position (m)');
+    legend('X','Y','Z')
+    title('CoM Position')
+    hold off;
+    
+    % CoM posn
+    figure; hold on;
+    plot(t_star, qd_star(4,:))
+    plot(t_star, qd_star(5,:))
+    plot(t_star, qd_star(6,:))
+    xlabel('Time (s)'); ylabel('Velocity (m/s)');
+    legend('X','Y','Z')
+    title('CoM Velocity')
+    hold off;
+    
+    % orientation
+    figure; hold on;
+    plot(t_star, rad2deg(q_star(4,:)))
+    plot(t_star, rad2deg(q_star(5,:)))
+    plot(t_star, rad2deg(q_star(6,:)))
+    xlabel('Time (s)'); ylabel('Orientation (degrees)');
+    legend('Roll', 'Pitch', 'Yaw')
+    title('CoM Orientation')
+    hold off;
+
+    
+%     % Foot locations
+%     figure; hold on;
+%     for leg = 1:4
+%         xyz_idx = 3*leg-2 : 3*leg;
+%         plot3(p_star(xyz_idx(1), :), p_star(xyz_idx(2), :), p_star(xyz_idx(3), :))
+%     end
+%     xlabel('x'); ylabel('y'); zlabel('z')
+%     title('Foot locations')
+%     hold off;
+    
+end
+    
+    
+    

@@ -169,18 +169,19 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
             % no-slip constraint
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.001);
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.001);
+%             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) == 0.00);
         end
         
-        r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
-        p_rel = (ck(xyz_idx) - r_hip);
-        kin_box_x = 0.15;
-        kin_box_y = 0.15;
-        kin_box_z = 0.30;
-        
-        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
-        opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
-        opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0);
-        opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
+%         r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
+%         p_rel = (ck(xyz_idx) - r_hip);
+%         kin_box_x = 0.15;
+%         kin_box_y = 0.15;
+%         kin_box_z = 0.30;
+%         
+%         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
+%         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
+%         opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0);
+%         opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
         
         tau_leg = J_f{leg}'*(-fk(xyz_idx));
         opti.subject_to(-model.tauMax(1) <= tau_leg(1) <= model.tauMax(1));
@@ -214,20 +215,21 @@ for k = 1:N-1
     qk = q(:, k);
     ck = c(:,k);
     
-    pFootk = get_forward_kin_foot_mc(model, params, [qk; jposk]);
+%     pFootk = get_forward_kin_foot_mc(model, params, [qk; jposk]);
+    pFootk = get_forward_kin_foot(model, [qk; jposk]);
     footPosk = [pFootk{1};pFootk{2};pFootk{3};pFootk{4}];
-    opti.subject_to(ck - footPosk >= -0.01); % Eq (7i)
-    opti.subject_to(ck - footPosk <= 0.01); % Eq (7i)
+%     opti.subject_to(ck - footPosk >= -0.001); % Eq (7i)
+    opti.subject_to(ck - footPosk == 0.00); % Eq (7i)
     opti.subject_to(jposk >= jpos_min);
     opti.subject_to(jposk <= jpos_max);
     
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0.25 0 0]';
+q_init_val = [0 0 .5 pi/4 0 0]';
 qd_init_val = [0 0 0 0 0 -1]';
 
-q_min_val = [-10 -10 0.10 -10 -10 -10];
+q_min_val = [-10 -10 0.05 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
@@ -240,16 +242,16 @@ qd_term_ref = [0 0 0, 0 0 0]';
 c_init_val = repmat(q_init_val(1:3),4,1)+...
     diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -q_init_val(3)],1,4)';
 
-c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.2],1,4)';
+c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.15 -0.2],1,4)';
 f_ref = zeros(12,1);
 
 QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
 QX_val = zeros(12, 1);
-QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
+QN_val = [0 0 10, 10 10 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
 Qf_val = [.001/200 .001/200 .001/200]';
 
-mu_val = 1;
+mu_val = .5;
 l_leg_max_val = .4;
 f_max_val = 225;
 
@@ -285,17 +287,43 @@ opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
 
+f = Function.load('../codegen_casadi/landingCtrller_IPOPT.casadi');
+
+tic
+% solve problem by calling f with numerial arguments (for verification)
+disp_box('Solving Problem with Solver, c code and simple bounds');
+[res.x,res.f] = f(Xref_val, Uref_val,...
+    dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
+    q_init_val, qd_init_val, ...
+    q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
+    QN_val, [Xref_val(:);Uref_val(:)],...
+    mu_val, l_leg_max_val, f_max_val, mass_val,...
+    diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
+toc
+
+% Decompose solution
+X_tmp = zeros(12, N);
+U_tmp = zeros(6*model.NLEGS, N-1);
+
+res.x = full(res.x);
+X_star_guess = reshape(res.x(1:numel(X_tmp)),size(X_tmp));
+% q_star(1:6,:) = X_star(1:6,:);
+% q_star(7:18,:) = repmat(q_home(7:end),1,N);
+U_star_guess = reshape(res.x(numel(X_tmp)+1:numel(X_tmp)+numel(U_tmp)), size(U_tmp));
+opti.set_initial([U(:)],[U_star_guess(:)]);
+opti.set_initial([X(:)],[X_star_guess(:)]);
+
 %% load function
-load('prevSoln.mat');  
-%jpos_star_guess = q_star(7:18,1:end-1);
-jpos_star_guess = jpos_star; 
-U_star_guess = U_star; X_star_guess = X_star; 
+% load('prevSoln.mat');  
+% jpos_star_guess = q_star(7:18,1:end-1);
+% jpos_star_guess = jpos_star; 
+% U_star_guess = U_star; X_star_guess = X_star; 
 % opti.set_initial([U(:)],[U_star_guess(:)]);
 % opti.set_initial([X(:)],[X_star_guess(:)]);
 % opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
-opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-opti.set_initial([U(:)],[Uref_val(:)]);
-opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
+% opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
+% opti.set_initial([U(:)],[Uref_val(:)]);
+% opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -320,12 +348,12 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
     'min_refinement_steps',1,... % (1)
-    'warm_start_init_point', 'yes'); % (no)
+    'warm_start_init_point', 'no'); % (no)
 
 s_opts.file_print_level = 3;
 s_opts.print_level = 4;

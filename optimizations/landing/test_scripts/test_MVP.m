@@ -5,14 +5,17 @@
 
 %% cleanup
 rmpath(genpath('.')); % clear all previously added paths
-clear; clc; close all;
+clear; clc; %close all;
 
 %% flags
 show_animation = true;
-run_IK = false;
+run_IK = true;
 make_plots = true;
 
 %% add library paths
+% may need to specify os directory
+% addpath(genpath('../../utilities/casadi/casadi_windows'));
+% addpath(genpath('../../utilities/casadi/casadi_linux'));
 addpath(genpath('../../../utilities_general'));
 addpath(genpath('../codegen_casadi'));
 import casadi.*
@@ -24,7 +27,7 @@ model  = get_robot_model(params);
 model  = buildShowMotionModel(params, model);
 
 %% contact schedule parameters
-N = 21; 
+N = 61; 
 T = .6;
 dt_val = repmat(T/(N-1),1,N-1);
 
@@ -41,7 +44,6 @@ opti = casadi.Opti();
 X = opti.variable(12, N);               % floating base
 q       = X(1:6,:);
 qdot    = X(7:12,:);
-jpos    = opti.variable(12, N-1);         % joint positions
 U = opti.variable(6*model.NLEGS, N-1);  % foot posns + GRFs
 c     = U(1:12,:);
 f_grf = U(13:24,:);
@@ -87,18 +89,12 @@ p_hip = [0.19;-0.1;-0.2;...
 cost = casadi.MX(0);             % initialize cost
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
-gamma = 1;   % discount
+gamma = 0.95;   % discount
 
-% for k = 1:(N-1)                  % running cost
-% %     X_err = X(:,k) - Xref(:,k);                                         % floating base error
-% %     pf_err = repmat(X(1:3,k),model.N_GND_CONTACTS,1) + p_hip - c(:,k);  % foot position error
-%     U_err = U(13:24,k) - Uref(13:24,k);                                 % GRF error
-% %     cost = cost + gamma^k*(X_err'*diag(QX)*X_err+...                            % sum of quadratic error costs
-% %         pf_err'*diag(repmat(Qc,4,1))*pf_err+...
-% %         U_err'*diag(repmat(Qf,4,1))*U_err)*dt(k);
-%     cost = cost + gamma^k*U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
-%     
-% end
+for k = 1:(N-1)                  % running cost
+    U_err = U(13:24,k) - Uref(13:24,k);          
+    cost = cost + U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
+end
 opti.minimize(cost);             % set objective
 
 %% initial state constraint
@@ -107,8 +103,8 @@ opti.subject_to(qdot(1:6,1) == qd_init);    % initial ang. vel. + lin. vel.
 
 %% terminal state constraints
 
-q_term_min_val = [-10 -10 0.15 -0.1 -0.1 -10];
-q_term_max_val = [10 10 5 0.1 0.1 10];
+q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
+q_term_max_val = [10 10 .3 0.1 0.1 10];
 
 qd_term_min_val = [-10 -10 -10 -.5 -.5 -.5];
 qd_term_max_val = [10 10 10 .5 .5 .5];
@@ -132,7 +128,6 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     rpyk = q(4:6,k);
     ck = c(:,k);
     fk = f_grf(:,k);
-    jposk = jpos(:, k);
     
     R_world_to_body = rpyToRotMat(rpyk(1:3))';
     R_body_to_world = rpyToRotMat(rpyk(1:3));
@@ -153,14 +148,10 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     opti.subject_to(qdot(1:3,k+1) - qdk(1:3) == omegaDot * dt(k));
     
     % non-negative GRF
-%     opti.subject_to(f_max*ones(4, 1) >= fk([3 6 9 12]) >= zeros(4,1));
-    opti.subject_to( fk([3 6 9 12]) >= zeros(4,1));
+    opti.subject_to(f_max*ones(4, 1) >= fk([3 6 9 12]) >= zeros(4,1));
 
     % contact constraints
     R_yaw = rpyToRotMat([0 0 rpyk(3)]);
-    
-    J_f = get_foot_jacobians_mc( model, params, jposk);
-    
     for leg = 1:model.NLEGS
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
         opti.subject_to(ck(xyz_idx(3)) >= 0);
@@ -170,22 +161,24 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.001);
             opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.001);
         end
-        
+
         r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
         p_rel = (ck(xyz_idx) - r_hip);
         kin_box_x = 0.15;
-        kin_box_y = 0.15;
+        kin_box_y = 0.125;
         kin_box_z = 0.30;
         
-        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
-        opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
-        opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0);
-        opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
+        sideSign = [-1, 1, -1, 1];
         
-        tau_leg = J_f{leg}'*(-fk(xyz_idx));
-        opti.subject_to(-model.tauMax(1) <= tau_leg(1) <= model.tauMax(1));
-        opti.subject_to(-model.tauMax(2) <= tau_leg(2) <= model.tauMax(2));
-        opti.subject_to(-model.tauMax(3) <= tau_leg(3) <= model.tauMax(3));
+        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
+        if (leg == 1 || leg == 3)
+            opti.subject_to(.025*sideSign(leg) >= p_rel(2) >= -kin_box_y);
+        else
+            opti.subject_to(.025*sideSign(leg) <= p_rel(2) <= kin_box_y);
+        end
+        
+        opti.subject_to(-kin_box_z - 0.075 <= p_rel(3) <= -0.05);
+        opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
     end
 
     % friction Constraints, Eq (7k)
@@ -195,44 +188,26 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     opti.subject_to(fk([2 5 8 11]) >= -0.71*mu*fk([3 6 9 12]));
     
     % state & velocity bounds, Eq (7k)
-    opti.subject_to(qk <= q_max);
-    opti.subject_to(qk >= q_min);
-    opti.subject_to(qdk <= qd_max);
-    opti.subject_to(qdk >= qd_min);
-end
-
-
-jpos_min = repmat([-pi/8, -pi/3, pi/4]', 4, 1);
-jpos_max = repmat([pi/8, -pi/6, 3*pi/4]', 4, 1);
-
-
-disp_box('Building kinematic constraints');
-% Kinematic Constraints
-for k = 1:N-1
-  
-    jposk = jpos(:,k);
-    qk = q(:, k);
-    ck = c(:,k);
-    
-    pFootk = get_forward_kin_foot_mc(model, params, [qk; jposk]);
-    footPosk = [pFootk{1};pFootk{2};pFootk{3};pFootk{4}];
-    opti.subject_to(ck - footPosk >= -0.001); % Eq (7i)
-    opti.subject_to(ck - footPosk <= 0.001); % Eq (7i)
-    opti.subject_to(jposk >= jpos_min);
-    opti.subject_to(jposk <= jpos_max);
-    
+%     opti.subject_to(qk <= q_max);
+%     opti.subject_to(qk >= q_min);
+%     opti.subject_to(qdk <= qd_max);
+%     opti.subject_to(qdk >= qd_min);    
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/4 0]';
-qd_init_val = [0 0 0 0 0 -3]';
+% q_init_val = [0 0 .5 .25*randn(1)-0.5 randn(1)-0.5 .25*randn(1)-0.5]';
+q_init_val = [0 0 .6 pi/6 0 0]';
+qd_init_val = [0 0 0 0 0. -3]';
 
-q_min_val = [-10 -10 0.10 -10 -10 -10];
-q_max_val = [10 10 1.0 10 10 10];
+q_min_val = [-10 -10 0.075 -10 -10 -10];
+q_max_val = [10 10 5 10 10 10];
 qd_min_val = [-10 -10 -10 -40 -40 -40];
 qd_max_val = [10 10 10 40 40 40];
 
-
+% q_term_min_val = [-10 -10 0.2 -0.1 -0.1 -10];
+% q_term_max_val = [10 10 5 0.1 0.1 10];
+% qd_term_min_val = [-10 -10 -10 -40 -40 -40];
+% qd_term_max_val = [10 10 10 40 40 40];
 
 q_term_ref = [0 0 0.2, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
@@ -240,7 +215,8 @@ qd_term_ref = [0 0 0, 0 0 0]';
 c_init_val = repmat(q_init_val(1:3),4,1)+...
     diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -q_init_val(3)],1,4)';
 
-c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.2],1,4)';
+c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.10 -0.3],1,4)';
+% f_ref = (mass_val*9.81/4)*ones(12,1);
 f_ref = zeros(12,1);
 
 QX_val = [0 0 0, 10 10 0, 10 10 10, 10 10 10]';
@@ -248,10 +224,12 @@ QX_val = zeros(12, 1);
 QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 Qc_val = [0 0 0]';
 Qf_val = [.001/200 .001/200 .001/200]';
+Qf_val = [0 0 .0001/200]';
+% Qf_val = [.0001/200 .0001/200 0]';
 
-mu_val = .4;
-l_leg_max_val = .4;
-f_max_val = 225;
+mu_val = .5;
+l_leg_max_val = .35;
+f_max_val = 300;
 
 %% set parameter values
 for i = 1:6
@@ -284,17 +262,11 @@ opti.set_value(Ib,diag(Ibody_val(1:3,1:3)));
 opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 
 %% initial guess
-
-%% load function
-load('prevSoln.mat');  
-%jpos_star_guess = q_star(7:18,1:end-1);
-X_star_guess = X_star; 
-U_star_guess = U_star; X_star_guess = X_star; 
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
-opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
-% opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-% opti.set_initial([U(:)],[Uref_val(:)]);
+load('prevSoln.mat'); 
+U_star_guess = U_star; X_star_guess = X_star;
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+opti.set_initial([U(:)],[Uref_val(:)]);
 % opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
@@ -320,7 +292,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -328,13 +300,13 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'warm_start_init_point', 'yes'); % (no)
 
 s_opts.file_print_level = 3;
-s_opts.print_level = 4;
-s_opts.print_frequency_iter = 1;
-s_opts.print_timing_statistics ='yes';
+s_opts.print_level = 3;
+s_opts.print_frequency_iter = 100;
+s_opts.print_timing_statistics ='no';
 opti.solver('ipopt',p_opts,s_opts);
 
  s_opts = struct('linsolver',4,... %4 works well
-            'outlev', 0,...
+            'outlev', 2,...
             'strat_warm_start',0,...
             'algorithm',0,...
             'bar_murule',2,... % 5 works well
@@ -344,10 +316,9 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',800);%,...
 
-% opti.solver('knitro', p_opts, s_opts);
+opti.solver('knitro', p_opts, s_opts);
 
 %% solve
-
 disp_box('Solving with Opti Stack');
 tic
 sol = opti.solve_limited();
@@ -356,12 +327,11 @@ toc
 %% partition solution
 X_star = sol.value(X);
 U_star = sol.value(U);
-jpos_star = sol.value(jpos);
+q_star = zeros(18, N);
 q_star(1:6,:) = sol.value(q);
 qd_star = sol.value(qdot);
 f_star = U_star(13:24, :); p_star = U_star(1:12, :);
 lam_g_star = sol.value(opti.lam_g);
-save('prevSoln.mat','X_star','U_star','jpos_star','lam_g_star');
 
 q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
 
@@ -378,10 +348,7 @@ if run_IK
 else
     q_star(7:18,:) = repmat(repmat(q_leg_home', 4, 1),1,N);
 end
-
-q_star(7:18,1:end-1) = sol.value(jpos);
-q_star(7:18, end) = q_star(7:18, end-1);
-
+   
 t_star = zeros(1,N);
 for k = 2:N
     t_star(k) = t_star(k-1) + dt_val(1,k-1);
@@ -391,22 +358,44 @@ if(show_animation)
     showmotion(model,t_star,q_star)
 end
 
-
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
+    R_world_to_body = rpyToRotMat(q_star(4:6, i))';
+    J_f = get_foot_jacobians_mc(model, params, q_star(7:18, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
-        torque(xyz_idx, i) = J_f{leg}'*(-f_star(xyz_idx, i));
+        torque(xyz_idx, i) = J_f{leg}'*(-R_world_to_body*f_star(xyz_idx, i));
     end
 end
+
+cs = zeros(4, N); cs(:, end) = ones(4, 1);
+for leg = 1:4
+    cs(leg, 1:end-1) = f_star(3*leg, :) > 1;
+end
+
+save('prevSoln.mat','X_star','U_star', 'q_star', 'cs');
 
 %% plots
 
 if make_plots
-    
-    % GRFs
+        
+    % torque limits
+    figure; hold on;
+    plot(t_star(1:end-1), [torque(1, :);torque(4, :);torque(7, :);torque(10, :)], 'r-')
+    plot(t_star(1:end-1), model.tauMax(1)*ones(1, N-1), 'r--')
+    plot(t_star(1:end-1), -model.tauMax(1)*ones(1, N-1), 'r--')
+    plot(t_star(1:end-1), [torque(2, :);torque(5, :);torque(8, :);torque(11, :)], 'g-')
+    plot(t_star(1:end-1), model.tauMax(2)*ones(1, N-1), 'g--')
+    plot(t_star(1:end-1), -model.tauMax(2)*ones(1, N-1), 'g--')
+    plot(t_star(1:end-1), [torque(3, :);torque(6, :);torque(9, :);torque(12, :)], 'b-')
+    plot(t_star(1:end-1), model.tauMax(3)*ones(1, N-1), 'b--')
+    plot(t_star(1:end-1), -model.tauMax(3)*ones(1, N-1), 'b--')
+    xlabel('Time (s)'); ylabel('Torque (Nm)')
+    title("Torque Limits")
+    hold off;
+
+    % Vertical GRFs 
     figure; hold on;
     for leg = 1:4
         xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
@@ -414,6 +403,28 @@ if make_plots
     end
     xlabel('Time (s)'); ylabel('Force (N)');
     title('Vertical ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    % X GRFs
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(1), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('X ground reaction forces');
+    legend('FR', 'FL', 'BR', 'BL')
+    hold off;
+    
+    % Y GRFs
+    figure; hold on;
+    for leg = 1:4
+        xyz_idx = 3*(leg-1)+1:3*(leg-1)+3;
+        plot(t_star(1:end-1), f_star(xyz_idx(2), :));
+    end
+    xlabel('Time (s)'); ylabel('Force (N)');
+    title('Y ground reaction forces');
     legend('FR', 'FL', 'BR', 'BL')
     hold off;
     
@@ -446,21 +457,17 @@ if make_plots
     legend('Roll', 'Pitch', 'Yaw')
     title('CoM Orientation')
     hold off;
+
     
-    % torque limits
-    figure; hold on;
-    plot(t_star(1:end-1), [torque(1, :);torque(4, :);torque(7, :);torque(10, :)], 'r-')
-    plot(t_star(1:end-1), model.tauMax(1)*ones(1, N-1), 'r--')
-    plot(t_star(1:end-1), -model.tauMax(1)*ones(1, N-1), 'r--')
-    plot(t_star(1:end-1), [torque(2, :);torque(5, :);torque(8, :);torque(11, :)], 'g-')
-    plot(t_star(1:end-1), model.tauMax(2)*ones(1, N-1), 'g--')
-    plot(t_star(1:end-1), -model.tauMax(2)*ones(1, N-1), 'g--')
-    plot(t_star(1:end-1), [torque(3, :);torque(6, :);torque(9, :);torque(12, :)], 'b-')
-    plot(t_star(1:end-1), model.tauMax(3)*ones(1, N-1), 'b--')
-    plot(t_star(1:end-1), -model.tauMax(3)*ones(1, N-1), 'b--')
-    xlabel('Time (s)'); ylabel('Torque (Nm)')
-    title("Torque Limits")
-    hold off;
+    % Foot locations
+%     figure; hold on;
+%     for leg = 1:4
+%         xyz_idx = 3*leg-2 : 3*leg;
+%         plot3(p_star(xyz_idx(1), :), p_star(xyz_idx(2), :), p_star(xyz_idx(3), :))
+%     end
+%     xlabel('x'); ylabel('y'); zlabel('z')
+%     title('Foot locations')
+%     hold off;
     
 end
     

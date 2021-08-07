@@ -32,6 +32,9 @@ showmotion(model,[0, 1],repmat([fb_state; q_test], 1, 2))
 jpos_min = [0, -pi/3, deg2rad(15)];
 jpos_max = [0, -deg2rad(5), 3*pi/4];
 
+jpos_min = [0, -pi/3, pi/2];
+jpos_max = [0, -deg2rad(5), 3*pi/4];
+
 N_sweep = 20;
 
 sweep_abad = linspace(jpos_min(1), jpos_max(1), N_sweep);
@@ -64,6 +67,7 @@ trisurf(tri,p_FR(1,:)',p_FR(3,:)',f_z')
 xlabel('x')
 ylabel('z')
 zlabel('F (N)')
+grid on;
 hold off;
 
 %% structure data
