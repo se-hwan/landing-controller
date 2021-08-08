@@ -4,7 +4,7 @@
 % Author:       Se Hwan Jeon
 
 %% cleanup
-rmpath(genpath('.')); % clear all previously added paths
+restoredefaultpath; % clear all previously added paths
 clear; clc; close all;
 
 %% flags
@@ -53,32 +53,31 @@ Uref = opti.parameter(24, N-1);         % foot posn + GRF reference
 
 dt = opti.parameter(1, N-1);            % timesteps
 
-q_min = opti.parameter(6,1);
+q_min = opti.parameter(6,1);            % state bounds (only z pos used)
 q_max = opti.parameter(6,1);
 qd_min = opti.parameter(6,1); 
 qd_max = opti.parameter(6,1);
 
-q_init = opti.parameter(6,1);
+q_init = opti.parameter(6,1);           % initial state
 qd_init = opti.parameter(6,1);
+c_init = opti.parameter(12, 1);         % initial foot locations (world frame)
 
-q_term_min = opti.parameter(6,1);
+q_term_min = opti.parameter(6,1);       % terminal state bounds
 q_term_max = opti.parameter(6,1);
 qd_term_min = opti.parameter(6,1);
 qd_term_max = opti.parameter(6,1);
+
 QN = opti.parameter(12,1);              % weighting matrices
 
-c_init = opti.parameter(12, 1);
-
-mu = opti.parameter();                  % robot/environment parameters
-l_leg_max = opti.parameter();
+mu = opti.parameter();                  % friction coefficient
+l_leg_max = opti.parameter();           % maximum leg length (needed?)
 f_max = opti.parameter();
 mass = opti.parameter();
 Ib = opti.parameter(3,1);
 Ib_inv = opti.parameter(3,1);
-
+kin_box = opti.parameter(3, 1); 
 td_state = opti.parameter(4, 1);    
 
-kin_box = opti.parameter(3, 1); 
 
 p_hip = [0.19;-0.1;-0.2;...
          0.19;0.1;-0.2;...
@@ -90,12 +89,18 @@ cost = casadi.MX(0);             % initialize cost
 X_err = X(:,end)-Xref(:,end);    % terminal cost
 cost = cost + X_err'*diag(QN)*X_err;
 
+% Qf = [0.00001, 0.00001, 0.00001]';
+% 
+% for k = 1:(N-1)                  % running cost
+%     U_err = U(13:24,k) - Uref(13:24,k);          
+%     cost = cost + U_err'*diag(repmat(Qf,4,1))*U_err*dt(k);
+% end
 opti.minimize(cost);             % set objective
 
 %% initial state constraint
 opti.subject_to(q(1:6,1) == q_init);        % initial pos + ori
 opti.subject_to(qdot(1:6,1) == qd_init);    % initial ang. vel. + lin. vel.
-% opti.subject_to(c(:, 1) == c_init);
+opti.subject_to(c(:, 1) == c_init);
 
 %% terminal state constraints
 opti.subject_to(q(:,N) >= q_term_min);      % bounds terminal state to be within specified min/max values
@@ -146,16 +151,14 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         opti.subject_to(fk(xyz_idx(3))*ck(xyz_idx(3)) <= .001);             % LCP constraint
         if (k+1 < N)
             % no-slip constraint
-            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.01);
-            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.01);
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) <= 0.001);
+            opti.subject_to(fk(xyz_idx(3))*(c(xyz_idx,k+1)-ck(xyz_idx)) >= -0.001);
             opti.subject_to(td_state(leg)*(c(xyz_idx,k+1)-ck(xyz_idx)) == 0);
         end
         if (k > 1)
             r_hip = qk(1:3) + R_body_to_world*params.hipSrbmLocation(leg,:)';
             p_rel = (ck(xyz_idx) - r_hip);
-            kin_box_x = 0.15;
-            kin_box_y = 0.15;
-            kin_box_z = 0.30;
+
             kin_box_x = kin_box(1);
             kin_box_y = kin_box(2);
             kin_box_z = kin_box(3);
@@ -191,12 +194,11 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-q_init_val = [0 0 0.6 0 pi/4 0 ]';
-qd_init_val = [0.3 0.3 .3 -.2 0.2 -3]';
-% q_init_val = [0 0 0.3 0 pi/10 0  ]';
-% qd_init_val = [0.3 0.3 5 -.2 0.2 -5.]';
-q_init_val = [-.012 .012 .4112 .0359 .8031 .0256]';
-qd_init_val = [.2886 .2978 .2947 -.2 0.2 -3.5864]';
+q_init_val = [0 0 0.55 (pi/6)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) 2*rand(1)-1]';
+qd_init_val = [2*rand(1,3)-1 3*rand(1, 2)-1.5 -5]';
+
+% q_init_val = [0         0    0.6    0  0 0]';
+% qd_init_val = [0 0 0  0 0   -4.5000]';
 
 q_min_val = [-10 -10 0.075 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -216,8 +218,8 @@ sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 c_init_val = zeros(12, 1);
 for leg = 1:4
     xyz_idx = 3*leg-2 : 3*leg;
-    p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.1 -0.1]';
-    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat(q_init_val(4:6))*p_foot_rel;
+    p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.15 -0.3]';
+    c_init_val(xyz_idx) = q_init_val(1:3) + expm(hatMap(q_init_val(4:6)))*p_foot_rel;
 end
 
 c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.1 -0.2],1,4)';
@@ -227,10 +229,11 @@ QN_val = [0 0 100, 100 100 0, 10 10 10, 10 10 10]';
 
 mu_val = .5;
 l_leg_max_val = .35;
-f_max_val = 200;
+f_max_val = 250;
 
-kin_box_val = [0.15 0.15 0.3];
-td_state_val = [1 1 0 0];
+kin_box_val = [0.125 0.125 0.30];
+td_state_val = [1 1  1 1];
+td_state_val = [0 0 0 0 ];
 
 %% set parameter values
 for i = 1:6
@@ -263,9 +266,13 @@ opti.set_value(c_init, c_init_val);
 opti.set_value(td_state, td_state_val);
 opti.set_value(kin_box, kin_box_val);
 
-
 %% initial guess
 opti.set_initial([U(:)],[Uref_val(:)]);
+% load('prevSoln.mat'); 
+% U_star_guess = U_star; X_star_guess = X_star;
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
+
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -290,7 +297,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma97',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -309,6 +316,8 @@ disp_box('Solving with Opti Stack');
 sol = opti.solve_limited();
 toc
 
+disp(q_init_val')
+disp(qd_init_val')
 
 %% partition solution
 X_star = sol.value(X);
