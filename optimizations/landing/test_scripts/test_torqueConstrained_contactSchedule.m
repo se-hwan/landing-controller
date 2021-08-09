@@ -355,7 +355,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -379,7 +379,7 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',800);%,...
 
-opti.solver('knitro', p_opts, s_opts);
+% opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 

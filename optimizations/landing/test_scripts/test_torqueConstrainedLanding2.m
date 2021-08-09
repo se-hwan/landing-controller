@@ -133,8 +133,8 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
     fk = f_grf(:,k);
     jposk = jpos(:, k);
     
-    R_world_to_body = rpyToRotMat(rpyk(1:3))';
-    R_body_to_world = rpyToRotMat(rpyk(1:3));
+    R_world_to_body = rpyToRotMatTest(rpyk(1:3))';
+    R_body_to_world = rpyToRotMatTest(rpyk(1:3));
     
     % dynamics
     rddot = (1/mass).*sum(reshape(fk,3,model.NLEGS),2)+model.gravity';
@@ -227,7 +227,7 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-q_init_val = [0 0 .5 pi/10 0 0]';
+q_init_val = [0 0 .5 pi/10 pi/4 0]';
 qd_init_val = [0 0 0 0 -.5 -3]';
 
 q_min_val = [-10 -10 0.075 -10 -10 -10];
@@ -311,9 +311,9 @@ opti.set_value(Ib_inv,diag(Ibody_inv_val(1:3,1:3)));
 % opti.set_initial([X(:)],[X_star_guess(:)]);
 
 %% load function
-load('prevSoln.mat');  
-jpos_star_guess = jpos_star; 
-U_star_guess = U_star; X_star_guess = X_star; 
+% load('prevSoln.mat');  
+% jpos_star_guess = jpos_star; 
+% U_star_guess = U_star; X_star_guess = X_star; 
 % opti.set_initial([U(:)],[U_star_guess(:)]);
 % opti.set_initial([X(:)],[X_star_guess(:)]);
 % opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
@@ -344,7 +344,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'recalc_y','no',... % {'no','yes'};
     'max_soc',4,... % (4)
     'accept_every_trial_step','no',... % {'no','yes'}
-    'linear_solver','ma57',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
+    'linear_solver','mumps',... % {'ma27','mumps','ma57','ma77','ma86'} % ma57 seems to work well
     'linear_system_scaling','slack-based',... {'mc19','none','slack-based'}; % Slack-based
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
@@ -368,7 +368,7 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',800);%,...
 
-opti.solver('knitro', p_opts, s_opts);
+% opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 
@@ -419,7 +419,7 @@ end
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    R_world_to_body = rpyToRotMat(q_star(4:6, i))';
+    R_world_to_body = rpyToRotMatTest(q_star(4:6, i))';
     J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
