@@ -147,10 +147,12 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         cross(qdk(1:3),diag(Ib)*qdk(1:3)));
     
     % forward euler integration of dynamics
-    opti.subject_to(q(1:3,k+1)  - q(1:3,k)  == qdk(4:6) * dt(k));
-    opti.subject_to(q(4:6,k+1)  - q(4:6,k)  == Binv(rpyk)*(R_body_to_world*qdk(1:3)) * dt(k));
     opti.subject_to(qdot(4:6,k+1) - qdk(4:6) == rddot * dt(k));
     opti.subject_to(qdot(1:3,k+1) - qdk(1:3) == omegaDot * dt(k));
+%     opti.subject_to(q(1:3,k+1)  - q(1:3,k)  == (qdk(4:6)+ rddot*dt(k)) * dt(k));
+    opti.subject_to(q(1:3,k+1)  - q(1:3,k)  == qdk(4:6) * dt(k));
+    opti.subject_to(q(4:6,k+1)  - q(4:6,k)  == Binv(rpyk)*(R_body_to_world*qdk(1:3)) * dt(k));
+
 
     % non-negative GRF
 %     opti.subject_to(f_max*ones(4, 1) >= fk([3 6 9 12]) >= zeros(4,1));
@@ -176,20 +178,20 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         
         % IDEA: pass these in as parameters and adjust based on falling
         % conditions? preprocessing, not part of optimization
-        kin_box_x = 0.25;
-        kin_box_y = 0.25;
+        kin_box_x = 0.025;
+        kin_box_y = 0.025;
         kin_box_z = 0.30;
         
         sideSign = [-1, 1, -1, 1];
         
-        opti.subject_to(-0.15 <= p_rel(1) <= kin_box_x);
-%         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
+        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
+        opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
 %         if (leg == 1 || leg == 3)
 %             opti.subject_to(-.05*sideSign(leg) >= p_rel(2) >= -kin_box_y);
 %         else
 %             opti.subject_to(-.05*sideSign(leg) <= p_rel(2) <= kin_box_y);
 %         end
-        opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0);
+%         opti.subject_to(-kin_box_z <= p_rel(3) + 0.05 <= 0);
         opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
         
         tau_leg = J_f{leg}'*(-R_world_to_body*fk(xyz_idx));
@@ -227,13 +229,27 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-% q_init_val = [0 0 .6 0.2 pi/6 0.3]';
-% qd_init_val = [0.4 0.3 0.2 1 1.5 -2]';
-q_init_val = [0 0 0.6 (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1)]';
-qd_init_val = [0.1*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -3.5]';
 
-% q_init_val = [         0         0    0.6000    0.3594    0.4423    0.2837]';
-% qd_init_val = [   -0.0915   -0.0244    0.0409    0.6885   -0.8272   -3.5000]';
+sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
+
+q_init_val = [0 0 .6 0 0 0 ]';
+qd_init_val = [0 0 0 0 0 -5]';
+% q_init_val = [0 0 .6 .3 pi/4 0]';
+% qd_init_val = [0 0 0 0 1 -3]';
+% q_init_val = [0 0 0.6 (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1)]';
+% qd_init_val = [0.1*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -7*rand(1)]';
+
+for leg = 1:4
+    hip_world(:, leg) = rpyToRotMatTest(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
+end
+td_hip_z = abs(min(hip_world(3,:)));
+
+td_nom = 0.35;
+z_max_td = td_nom + td_hip_z + abs(dt_val(1)*qd_init_val(6));
+
+q_init_val(3) = z_max_td;
+
+
 
 q_min_val = [-10 -10 0.075 -10 -10 -10];
 q_max_val = [10 10 1.0 10 10 10];
@@ -242,14 +258,6 @@ qd_max_val = [10 10 10 40 40 40];
 
 q_term_ref = [0 0 0.25, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
-
-sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
-
-
-% jpos_init_val = repmat([0, -0.8, 1.6]', 4, 1);
-% jpos_init = opti.parameter(12, 1);
-% opti.set_value(jpos_init, jpos_init_val);
-% opti.subject_to(jpos(:, 1) == jpos_init);
 
 c_init_val = zeros(12, 1);
 for leg = 1:4
@@ -270,7 +278,7 @@ Qf_val = [.0001/200 .0001/200 .0001/200]';
 
 mu_val = .5;
 l_leg_max_val = .4;
-f_max_val = 225;
+f_max_val = 300;
 
 %% set parameter values
 for i = 1:6
@@ -374,7 +382,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
     'min_refinement_steps',1,... % (1)
-    'warm_start_init_point', 'no'); % (no)
+    'warm_start_init_point', 'yes'); % (no)
 
 s_opts.file_print_level = 3;
 s_opts.print_level = 4;
@@ -393,7 +401,7 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',1500);%,...
 
-opti.solver('knitro', p_opts, s_opts);
+% opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 

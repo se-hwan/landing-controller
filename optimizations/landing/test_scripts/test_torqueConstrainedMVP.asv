@@ -147,10 +147,11 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         cross(qdk(1:3),diag(Ib)*qdk(1:3)));
     
     % forward euler integration of dynamics
-    opti.subject_to(q(1:3,k+1)  - q(1:3,k)  == qdk(4:6) * dt(k));
-    opti.subject_to(q(4:6,k+1)  - q(4:6,k)  == Binv(rpyk)*(R_body_to_world*qdk(1:3)) * dt(k));
     opti.subject_to(qdot(4:6,k+1) - qdk(4:6) == rddot * dt(k));
     opti.subject_to(qdot(1:3,k+1) - qdk(1:3) == omegaDot * dt(k));
+    opti.subject_to(q(1:3,k+1)  - q(1:3,k)  == (qdk(4:6)+ rddot*dt(k)) * dt(k));
+    opti.subject_to(q(4:6,k+1)  - q(4:6,k)  == Binv(rpyk)*(R_body_to_world*qdk(1:3)) * dt(k));
+
 
     % non-negative GRF
 %     opti.subject_to(f_max*ones(4, 1) >= fk([3 6 9 12]) >= zeros(4,1));
@@ -182,7 +183,7 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
         
         sideSign = [-1, 1, -1, 1];
         
-        opti.subject_to(-0.15 <= p_rel(1) <= kin_box_x);
+        opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
 %         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
 %         if (leg == 1 || leg == 3)
 %             opti.subject_to(-.05*sideSign(leg) >= p_rel(2) >= -kin_box_y);
@@ -227,10 +228,25 @@ for k = 1:N-1               % the 'k' suffix indicates the value of the variable
 end
 
 %% reference trajectories
-% q_init_val = [0 0 .6 0.2 pi/6 0.3]';
-% qd_init_val = [0.4 0.3 0.2 1 1.5 -2]';
-q_init_val = [0 0 0.6 (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1)]';
-qd_init_val = [0.1*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -3.5]';
+
+sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
+
+q_init_val = [0 0 .6 0 0 0]';
+qd_init_val = [0 0 0 0 0 -6]';
+% qd_init_val = [0.1*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -6]';
+
+for leg = 1:4
+    hip_world(:, leg) = rpyToRotMatTest(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
+end
+td_hip_z = abs(min(hip_world(3,:)));
+
+td_nom = 0.35;
+z_max_td = td_nom + td_hip_z/3 + abs(dt_val(1)*qd_init_val(6));
+
+q_init_val(3) = z_max_td;
+
+% q_init_val = [0 0 0.6 (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1)]';
+% qd_init_val = [0.1*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -3.5]';
 
 % q_init_val = [         0         0    0.6000    0.3594    0.4423    0.2837]';
 % qd_init_val = [   -0.0915   -0.0244    0.0409    0.6885   -0.8272   -3.5000]';
@@ -242,14 +258,6 @@ qd_max_val = [10 10 10 40 40 40];
 
 q_term_ref = [0 0 0.25, 0 0 0]';
 qd_term_ref = [0 0 0, 0 0 0]';
-
-sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
-
-
-% jpos_init_val = repmat([0, -0.8, 1.6]', 4, 1);
-% jpos_init = opti.parameter(12, 1);
-% opti.set_value(jpos_init, jpos_init_val);
-% opti.subject_to(jpos(:, 1) == jpos_init);
 
 c_init_val = zeros(12, 1);
 for leg = 1:4
@@ -270,7 +278,7 @@ Qf_val = [.0001/200 .0001/200 .0001/200]';
 
 mu_val = .5;
 l_leg_max_val = .4;
-f_max_val = 225;
+f_max_val = 300;
 
 %% set parameter values
 for i = 1:6
@@ -332,8 +340,8 @@ U_tmp = zeros(6*model.NLEGS, N-1);
 res.x = full(res.x);
 X_star_guess = reshape(res.x(1:numel(X_tmp)),size(X_tmp));
 U_star_guess = reshape(res.x(numel(X_tmp)+1:numel(X_tmp)+numel(U_tmp)), size(U_tmp));
-opti.set_initial([U(:)],[U_star_guess(:)]);
-opti.set_initial([X(:)],[X_star_guess(:)]);
+% opti.set_initial([U(:)],[U_star_guess(:)]);
+% opti.set_initial([X(:)],[X_star_guess(:)]);
 
 %% load function
 % load('prevSoln.mat');  
@@ -342,9 +350,9 @@ opti.set_initial([X(:)],[X_star_guess(:)]);
 % opti.set_initial([U(:)],[U_star_guess(:)]);
 % opti.set_initial([X(:)],[X_star_guess(:)]);
 % opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
-% opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-% opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
+opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
+opti.set_initial([U(:)],[Uref_val(:)]);
+opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10

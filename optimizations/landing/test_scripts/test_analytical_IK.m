@@ -19,7 +19,7 @@ model  = get_robot_model(params);
 model  = buildShowMotionModel(params, model);
 
 %% test configurations and parameters
-fb_test = [0.5 0 0.5 0 pi/4 pi/6]';
+fb_test = [0.5 0 0.5 pi/4 pi/4 pi/6]';
 q_test = repmat([0; -pi/4; pi/2], 4, 1);
 
 showmotion(model,[0, 5],repmat([fb_test; q_test], 1, 2))
@@ -46,7 +46,7 @@ p_z = p_foot_test(3);
 l_1 = foot_sign_convention(xyz_idx(2))*0.062;
 l_2 = 0.209;
 l_3 = 0.195;
-l_4 = foot_sign_convention(xyz_idx(2))*0.004;
+l_4 = foot_sign_convention(xyz_idx(2))*0.00;
 
 %% experimental redefinitions
 % hip_ref = diag(foot_sign_convention)*repmat([0.19 0.11 0],1,4)';
@@ -67,8 +67,8 @@ th3 = atan2(p_x - l_2*sin(th2), tmp - l_2*cos(th2)) - th2;
 th3_error = rad2deg(th3) - rad2deg(q_test(3));
 
 %% forward kinematics
-R_world_to_body = rpyToRotMat(fb_test(4:6))';
-R_body_to_world = rpyToRotMat(fb_test(4:6));
+R_world_to_body = rpyToRotMatTest(fb_test(4:6))';
+R_body_to_world = rpyToRotMatTest(fb_test(4:6));
 com_world = fb_test(1:3);
 hip_world = com_world + R_body_to_world*hip_ref(xyz_idx);
 foot_relHip = [l_2*sin(q_test(2)) + l_3*sin(q_test(2) + q_test(3));
@@ -78,7 +78,7 @@ foot_world = hip_world + R_body_to_world*foot_relHip
 
                       
 p_foot_fwd_kin{foot_choice}
-                      
+p_foot_fwd_kin_mc{foot_choice}
 %%
 % test = [p_foot_fwd_kin{1}; p_foot_fwd_kin{2}; p_foot_fwd_kin{3}; p_foot_fwd_kin{4}];
 % out = quadInverseKinematics(params, fb_test, test)

@@ -7,12 +7,12 @@ foot_sign_convention = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 l_1 = params.hipLocation(2);
 l_2 = params.kneeLocation(3)*-1;
 l_3 = params.footLocation(3)*-1;
-l_4 = 0.004;
+l_4 = 0.00;
 
 fb_state = q(1:6);
 jpos = q(7:18);
 
-R_body_to_world = rpyToRotMat(fb_state(4:6));
+R_body_to_world = rpyToRotMatTest(fb_state(4:6));
 
 com_world = fb_state(1:3);
 
