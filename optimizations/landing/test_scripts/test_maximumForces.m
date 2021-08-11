@@ -32,8 +32,8 @@ showmotion(model,[0, 1],repmat([fb_state; q_test], 1, 2))
 jpos_min = [0, -pi/3, deg2rad(15)];
 jpos_max = [0, -deg2rad(5), 3*pi/4];
 
-jpos_min = [0, -pi/3, pi/2];
-jpos_max = [0, -deg2rad(5), 3*pi/4];
+% jpos_min = [-pi/3, -pi/3, pi/2];
+% jpos_max = [-pi/3, -deg2rad(5), 3*pi/4];
 
 N_sweep = 20;
 
