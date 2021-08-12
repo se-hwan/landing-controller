@@ -99,6 +99,8 @@ opti.subject_to(qdot(:,N) <= qd_term_max);
 
 %% general constraints
 
+tau_leg = casadi.MX(12, N-1);
+
 for k = 1:N-1
     % values at timestep 'k'
     qk = q(:,k);
@@ -150,13 +152,13 @@ for k = 1:N-1
         kin_box_x = 0.10 + kin_box(1);
         kin_box_y = 0.10 + kin_box(2);
         kin_box_z_upper = -0.075;
-        kin_box_z_lower = -0.35;
+        kin_box_z_lower = -0.4;
         
         sideSign = [-1, 1, -1, 1];
         
         % kinematic box and leg length constraints        
         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
-        opti.subject_to(-kin_box_y <= p_rel(1) <= kin_box_y);
+%         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
 %         if (leg == 1 || leg == 3)
 %             opti.subject_to(-.05*sideSign(leg) >= p_rel(2) >= -kin_box_y);
 %         else
@@ -166,11 +168,24 @@ for k = 1:N-1
         opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
         
         % torque constraints (J^T*F <= tau_max)
-        tau_leg = J_f{leg}'*(-R_world_to_body*fk(xyz_idx));
-        opti.subject_to(-model.tauMax(1) <= tau_leg(1) <= model.tauMax(1));
-        opti.subject_to(-model.tauMax(2) <= tau_leg(2) <= model.tauMax(2));
-        opti.subject_to(-model.tauMax(3) <= tau_leg(3) <= model.tauMax(3));
+        tau_leg(xyz_idx, k) = J_f{leg}'*(-R_world_to_body*fk(xyz_idx));
+
+        opti.subject_to(-model.tauMax(1) <= tau_leg(xyz_idx(1), k) <= model.tauMax(1));
+        opti.subject_to(-model.tauMax(2) <= tau_leg(xyz_idx(2), k) <= model.tauMax(2));
+        opti.subject_to(-model.tauMax(3) <= tau_leg(xyz_idx(3), k) <= model.tauMax(3));
     end
+    
+    % motor voltage limits
+    if (k+1 < N && k > 1)
+        tau_motor_des_i = tau_leg(:,i) ./ repmat(model.gr,4,1);
+        current_des_i = tau_motor_des_i ./ (1.5*repmat(model.kt, 4, 1));
+        joint_vel_i = (jposk - jpos(:, k-1))./dt_val(1);
+        back_emf_i = joint_vel_i .* repmat(model.gr, 4, 1) .* repmat(model.kt, 4, 1) * 2.0;
+        v_des_i = current_des_i .* repmat(model.Rm, 4, 1) + back_emf_i;
+        opti.subject_to(v_des_i <= model.batteryV);
+        opti.subject_to(v_des_i >= -model.batteryV);        
+    end
+    
 
     % friction constraints
     opti.subject_to(fk([1 4 7 10]) <= 0.71*mu*fk([3 6 9 12]));
@@ -196,19 +211,18 @@ sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 
 % q_init_val = [0 0 0 0.0 0 0 ]';
 % qd_init_val = [0 0 0 0 0 0]';
-q_init_val = [0 0 0 (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1) (pi/6)*(2*rand(1)-1)]';
-qd_init_val = [0.1*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -7*rand(1)]';
+% q_init_val = [0 0 0 (pi/8)*(2*rand(1)-1) (pi/4)*(2*rand(1)-1) (pi/8)*(2*rand(1)-1)]';
+% qd_init_val = [0.1*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -2.5*rand(1)-2.5]';
+q_init_val = [0 0 0 pi/6 pi/4 0.1*rand(1)]';
+qd_init_val = [0.1*(2*rand(1,3)-1) 0 2.5 -3]';
 
-q_init_val = [
-   -0.0007    0.0285   -0.0557    1.0112    1.4132   -5.9246]';
-qd_init_val = []';
 
 for leg = 1:4
     hip_world(:, leg) = rpyToRotMatTest(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
 end
 td_hip_z = abs(min(hip_world(3,:)));
 
-td_nom = 0.35;
+td_nom = 0.325;
 z_max_td = td_nom + td_hip_z + abs(dt_val(1)*qd_init_val(6));
 
 q_init_val(3) = z_max_td;
@@ -242,14 +256,16 @@ Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 jpos_min_val = repmat([-pi/3, -pi/2, 0]', 4, 1);
 jpos_max_val = repmat([pi/3, pi/2, 3*pi/4]', 4, 1);
 
-kin_box_val = [kin_box_limits(qd_init_val(4), 'x'); kin_box_limits(qd_init_val(5), 'y')];
+v_body = rpyToRotMat_xyz(q_init_val(4:6))'*(qd_init_val(4:6));
 
-c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.15 -0.3],1,4)';
+kin_box_val = [kin_box_limits(v_body(1), 'x'); kin_box_limits(v_body(2), 'y')];
+
+c_ref = diag([1 -1 1, 1 1 1, -1 -1 1, -1 1 1])*repmat([0.2 0.2 -0.3],1,4)';
 f_ref = zeros(12,1);
 
 QN_val = [0 0 100, 10 10 0, 10 10 10, 10 10 10]';
 
-mu_val = 1;
+mu_val = 2;
 l_leg_max_val = .4;
 f_max_val = 300;
 
@@ -318,15 +334,15 @@ opti.set_initial([U(:)],[U_star_guess(:)]);
 opti.set_initial([X(:)],[X_star_guess(:)]);
 
 %% load function
-% load('prevSoln.mat');  
-% jpos_star_guess = jpos_star; 
-% U_star_guess = U_star; X_star_guess = X_star; 
-% opti.set_initial([U(:)],[U_star_guess(:)]);
-% opti.set_initial([X(:)],[X_star_guess(:)]);
-% opti.set_initial([jpos(:)],[jpos_star_guess(:)]);
-opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-% opti.set_initial([U(:)],[Uref_val(:)]);
-% opti.set_initial([X(:)],[Xref_val(:)]);   % generally causes difficulties converging
+load('prevSoln.mat');  
+jpos_star_guess = jpos_star; 
+U_star_guess = U_star; X_star_guess = X_star; 
+opti.set_initial(U(:),U_star_guess(:));
+opti.set_initial(X(:),X_star_guess(:));
+opti.set_initial(jpos(:),jpos_star_guess(:));
+% opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
+% opti.set_initial(U(:),Uref_val(:));
+% opti.set_initial(X(:),Xref_val(:));   % generally causes difficulties converging
 
 %% casadi and IPOPT options
 p_opts = struct('expand',true); % this speeds up ~x10
@@ -365,7 +381,7 @@ s_opts.print_timing_statistics ='yes';
 opti.solver('ipopt',p_opts,s_opts);
 
  s_opts = struct('linsolver',4,... %4 works well
-            'outlev', 2,...
+            'outlev', 2,...0
             'strat_warm_start',1,...
             'algorithm',0,...
             'bar_murule',2,... % 5 works well
@@ -422,16 +438,32 @@ if(show_animation)
     showmotion(model,t_star,q_star)
 end
 
-
+% jacobian torque calculation
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    R_world_to_body = rpyToRotMatTest(q_star(4:6, i))';
+    R_world_to_body = rpyToRotMat_xyz(q_star(4:6, i))';
     J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;
         torque(xyz_idx, i) = J_f{leg}'*(-R_world_to_body*f_star(xyz_idx, i));
     end
+end
+
+% motor voltage calculation
+v = zeros(12, N-1);
+joint_vel = zeros(12, N-1);
+for i = 1:12
+    joint_vel(i, 1:N-2) = diff(jpos_star(i, :))./dt_val(1);
+end
+
+for i = 2:N-1
+    tau_motor_des_i = torque(:,i) ./ repmat(model.gr,4,1);
+    current_des_i = tau_motor_des_i ./ (1.5*repmat(model.kt, 4, 1));
+    joint_vel_i = joint_vel(:, i-1);
+    back_emf_i = joint_vel_i .* repmat(model.gr, 4, 1) .* repmat(model.kt, 4, 1) * 2.0;
+    v_des_i = current_des_i .* repmat(model.Rm, 4, 1) + back_emf_i;
+    v(:, i) = v_des_i;
 end
 
 %% plots
@@ -517,19 +549,25 @@ if make_plots
     hold off;
     
         
+    % voltage limits
+    figure; hold on;
+    plot(t_star(1:end-1), model.batteryV*ones(1, N-1), 'k--')
+    plot(t_star(1:end-1), -model.batteryV*ones(1, N-1), 'k--')
+    for i = 1:12
+        plot(t_star(1:end-1), v(i, :))
+    end
+    xlabel('Time (s)'); ylabel('Voltage (V)')
+    title('Voltage Limits')
+    hold off;
     
-    for leg = 1:4
-    xyz_idx = 3*leg-2 : 3*leg;
-    p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.125 -0.3]';
-    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMatTest(q_init_val(4:6))*p_foot_rel;
-end
+    
     
     % Foot locations
     figure; hold on;
     for leg = 1:4
         xyz_idx = 3*leg-2 : 3*leg;
         for i = 1:N-1
-            R_world_to_body = rpyToRotMatTest(q_star(4:6, i))';
+            R_world_to_body = rpyToRotMat_xyz(q_star(4:6, i))';
             p_foot_rel(xyz_idx, i) = R_world_to_body*(p_star(xyz_idx, i) - q_star(1:3, i));
             p_foot_rel(xyz_idx, i) = p_foot_rel(xyz_idx, i) - params.hipSrbmLocation(leg, :)';
         end
@@ -547,8 +585,10 @@ end
     
     
     
-    
-    
+%%
+
+
+
     
     
     
