@@ -11,7 +11,7 @@ run_IK = true;
 show_animation = true;
 
 %% load function
-f = Function.load('landingCtrller_IPOPT_ws.casadi');
+f = Function.load('landingCtrller_KNITRO_ws.casadi');
 
 %% parameters
 disp_box('Building Robot Model');

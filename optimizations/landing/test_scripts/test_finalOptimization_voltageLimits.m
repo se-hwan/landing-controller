@@ -159,11 +159,11 @@ for k = 1:N-1
         % kinematic box and leg length constraints        
         opti.subject_to(-kin_box_x <= p_rel(1) <= kin_box_x);
 %         opti.subject_to(-kin_box_y <= p_rel(2) <= kin_box_y);
-%         if (leg == 1 || leg == 3)
-%             opti.subject_to(-.05*sideSign(leg) >= p_rel(2) >= -kin_box_y);
-%         else
-%             opti.subject_to(-.05*sideSign(leg) <= p_rel(2) <= kin_box_y);
-%         end
+        if (leg == 1 || leg == 3)
+            opti.subject_to(-.05*sideSign(leg) >= p_rel(2));
+        else
+            opti.subject_to(-.05*sideSign(leg) <= p_rel(2));
+        end
         opti.subject_to(kin_box_z_lower <= p_rel(3) <= kin_box_z_upper);
         opti.subject_to(dot(p_rel, p_rel) <= l_leg_max^2);
         
@@ -213,8 +213,8 @@ sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 % qd_init_val = [0 0 0 0 0 0]';
 % q_init_val = [0 0 0 (pi/8)*(2*rand(1)-1) (pi/4)*(2*rand(1)-1) (pi/8)*(2*rand(1)-1)]';
 % qd_init_val = [0.1*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -2.5*rand(1)-2.5]';
-q_init_val = [0 0 0 pi/6 pi/4 0.1*rand(1)]';
-qd_init_val = [0.1*(2*rand(1,3)-1) 0 2.5 -3]';
+q_init_val = [0 0 0 0 pi/4 0]';
+qd_init_val = [0.1*(2*rand(1,3)-1) 1 -1 -4]';
 
 
 for leg = 1:4
@@ -243,7 +243,7 @@ qd_term_ref = [0 0 0, 0 0 0]';
 c_init_val = zeros(12, 1);
 for leg = 1:4
     xyz_idx = 3*leg-2 : 3*leg;
-    p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.125 -0.3]';
+    p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.15 -0.3]';
     c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMatTest(q_init_val(4:6))*p_foot_rel;
 end
 
@@ -337,9 +337,9 @@ opti.set_initial([X(:)],[X_star_guess(:)]);
 load('prevSoln.mat');  
 jpos_star_guess = jpos_star; 
 U_star_guess = U_star; X_star_guess = X_star; 
-opti.set_initial(U(:),U_star_guess(:));
-opti.set_initial(X(:),X_star_guess(:));
-opti.set_initial(jpos(:),jpos_star_guess(:));
+% opti.set_initial(U(:),U_star_guess(:));
+% opti.set_initial(X(:),X_star_guess(:));
+% opti.set_initial(jpos(:),jpos_star_guess(:));
 % opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
 % opti.set_initial(U(:),Uref_val(:));
 % opti.set_initial(X(:),Xref_val(:));   % generally causes difficulties converging
@@ -391,7 +391,7 @@ opti.solver('ipopt',p_opts,s_opts);
             'bar_directinterval',10,...
             'maxit',1500);%,...
 
-opti.solver('knitro', p_opts, s_opts);
+% opti.solver('knitro', p_opts, s_opts);
 
 %% solve
 
@@ -457,14 +457,15 @@ for i = 1:12
     joint_vel(i, 1:N-2) = diff(jpos_star(i, :))./dt_val(1);
 end
 
-for i = 2:N-1
+for i = 1:N-1
     tau_motor_des_i = torque(:,i) ./ repmat(model.gr,4,1);
     current_des_i = tau_motor_des_i ./ (1.5*repmat(model.kt, 4, 1));
-    joint_vel_i = joint_vel(:, i-1);
+    joint_vel_i = joint_vel(:, i);
     back_emf_i = joint_vel_i .* repmat(model.gr, 4, 1) .* repmat(model.kt, 4, 1) * 2.0;
     v_des_i = current_des_i .* repmat(model.Rm, 4, 1) + back_emf_i;
     v(:, i) = v_des_i;
 end
+v = [zeros(12, 1) v];
 
 %% plots
 
@@ -551,12 +552,13 @@ if make_plots
         
     % voltage limits
     figure; hold on;
-    plot(t_star(1:end-1), model.batteryV*ones(1, N-1), 'k--')
-    plot(t_star(1:end-1), -model.batteryV*ones(1, N-1), 'k--')
+    plot(t_star(:), model.batteryV*ones(1, N), 'k--')
+    plot(t_star(:), -model.batteryV*ones(1, N), 'k--')
     for i = 1:12
-        plot(t_star(1:end-1), v(i, :))
+        plot(t_star(:), v(i, :))
     end
     xlabel('Time (s)'); ylabel('Voltage (V)')
+    axis([0, t_star(end), -26, 26])
     title('Voltage Limits')
     hold off;
     
@@ -582,14 +584,5 @@ if make_plots
     hold off;
     
 end
-    
-    
-    
-%%
-
-
-
-    
-    
     
     
