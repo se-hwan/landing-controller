@@ -35,7 +35,7 @@ f_knitro_ws = Function.load('../codegen_casadi/landingCtrller_KNITRO_ws.casadi')
 
 
 %% main optimization loop
-N_samples = 50; % number of optimizations
+N_samples = 1; % number of optimizations
 
 for cntr = 1:N_samples
 
@@ -45,10 +45,11 @@ for cntr = 1:N_samples
 
     m = randi([-1, 1], 1); m(~m) = -1;
     
-%     q_init_val = [0 0 0 (.25)*(2*rand(1)-1) m*((pi/6)*(rand(1))+pi/6) (.25)*(2*rand(1)-1)]';     % major pitch
+    q_init_val = [0 0 0 (0.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.5)*(2*rand(1)-1)]';     % major pitch
 %     q_init_val = [0 0 0 m*((pi/12)*(rand(1)) + pi/12) (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major roll
-    q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1) m*((pi/4)*(rand(1)) + pi/4)]';     % major yaw
-    qd_init_val = [0.5*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -3.25*rand(1)-1]';
+%     q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1) (pi/2)*(2*rand(1)-1)]';     % major yaw
+%     q_init_val = [0 0 0 (pi/6)*(2*rand(1)-1) (pi/4)*(2*rand(1)-1) m*((pi/4)*(rand(1)) + pi/4)]';     
+    qd_init_val = [0.5*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -2.5*rand(1)-2]';
 
     for leg = 1:4
         hip_world(:, leg) = rpyToRotMat_xyz(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
@@ -214,7 +215,7 @@ for cntr = 1:N_samples
     else
         disp("Optimization not saved. Continuing...")
     end
-    save("training_data_landing.mat", 'training_data');
+    save("training_data_landing.mat", 'training_data', '-V7.3');
 
 end
     
