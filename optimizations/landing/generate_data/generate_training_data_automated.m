@@ -9,11 +9,11 @@ clearvars -except training_data; clc; close all;
 
 %% flags
 show_animation = true;
-run_IK = false;
-make_plots = false;
+show_plots = false;
 
 %% add library paths
 addpath(genpath('../../../utilities_general'));
+addpath(genpath('../utilities_landing'));
 addpath(genpath('../codegen_casadi'));
 import casadi.*
 
@@ -25,17 +25,15 @@ model  = buildShowMotionModel(params, model);
 
 %% timestep parameters
 N = 21; 
-T = .6;
-dt_val = repmat(T/(N-1),1,N-1);
+dt_val = [0.05 repmat(0.02, 1, 15) [0.05 0.05 0.1 0.2]];
 
 %% load function
 f_ipopt_SRBM = Function.load('../codegen_casadi/landingCtrller_IPOPT.casadi');
 f_knitro = Function.load('../codegen_casadi/landingCtrller_KNITRO.casadi');
 f_knitro_ws = Function.load('../codegen_casadi/landingCtrller_KNITRO_ws.casadi');
 
-
 %% main optimization loop
-N_samples = 1; % number of optimizations
+N_samples = 100; % number of optimizations
 
 for cntr = 1:N_samples
 
@@ -43,13 +41,13 @@ for cntr = 1:N_samples
 
     sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 
-    m = randi([-1, 1], 1); m(~m) = -1;
+    q_init_val = [0 0 0 (0.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major pitch
+%     q_init_val = [0 0 0 (pi/6)*(2*rand(1)-1) (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major roll
+%     q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1) (pi/2)*(2*rand(1)-1)]';     % major yaw 
+    qd_init_val = [0.5*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -4.5*rand(1)-0.5]';
     
-    q_init_val = [0 0 0 (0.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.5)*(2*rand(1)-1)]';     % major pitch
-%     q_init_val = [0 0 0 m*((pi/12)*(rand(1)) + pi/12) (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major roll
-%     q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1) (pi/2)*(2*rand(1)-1)]';     % major yaw
-%     q_init_val = [0 0 0 (pi/6)*(2*rand(1)-1) (pi/4)*(2*rand(1)-1) m*((pi/4)*(rand(1)) + pi/4)]';     
-    qd_init_val = [0.5*(2*rand(1,3)-1) 1.5*(2*rand(1, 2)-1) -2.5*rand(1)-2]';
+%     q_init_val = [0 0 0 (pi/6)*(2*rand(1)-1) (.25)*(2*rand(1)-1) (.5)*(2*rand(1)-1)]'; 
+    qd_init_val = [0.5*(2*rand(1,3)-1) 1.75*(2*rand(1, 2)-1) -3*rand(1)-3]';
 
     for leg = 1:4
         hip_world(:, leg) = rpyToRotMat_xyz(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
@@ -101,7 +99,7 @@ for cntr = 1:N_samples
 
     mu_val = 0.75;
     l_leg_max_val = .4;
-    f_max_val = 300;
+    f_max_val = 500;
 
     %% set parameter values
     for i = 1:6
@@ -143,10 +141,9 @@ for cntr = 1:N_samples
     U_star_guess = reshape(res.x(numel(X_tmp)+1:numel(X_tmp)+numel(U_tmp)), size(U_tmp));
     jpos_guess = repmat([0, -pi/4, pi/2]', 4*(N-1), 1);
 
-    % opti.set_initial(jpos(:), repmat([0, -pi/4, pi/2]', 4*(N-1), 1));
-    % opti.set_initial(U(:),Uref_val(:));
-    % opti.set_initial(X(:),Xref_val(:));   % generally causes difficulties converging
-
+%     X_star_guess = Xref_val(:);
+%     U_star_guess = Uref_val(:);
+    
     %% solve
     disp_box('Solving problem for warmstart...');
     tic
@@ -197,11 +194,15 @@ for cntr = 1:N_samples
     end
 
     %% visualization
-    if(show_animation)
-        showmotion(model,t_star,q_star)
+    if show_animation
+        showmotion(model,t_star(1:end-1),q_star(:,1:end-1))
+    end
+    if show_plots
+        plot_results(model, params, t_star, X_star, U_star, jpos_star);
     end
 
     %% training data generation
+    disp("Iteration: " + num2str(cntr));
     save_training = input("Save trajectory for training? ");
     if (save_training == 1)
         if (exist('training_data','var') == 1)

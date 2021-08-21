@@ -15,8 +15,8 @@ make_casadi_function = true;
 
 %% add library paths
 addpath(genpath('../../../utilities_general'));
+addpath(genpath('../utilities_landing'));
 addpath(genpath('../codegen_casadi'));
-addpath(genpath('../main_scripts'));
 import casadi.*
 
 %% build robot model
@@ -28,7 +28,7 @@ model  = buildShowMotionModel(params, model);
 %% timestep parameters
 N = 21; 
 T = .6;
-dt_val = repmat(T/(N-1),1,N-1);
+dt_val = [0.05 repmat(0.02, 1, 15) [0.05 0.05 0.1 0.2]];
 
 %% optimization
 
@@ -151,7 +151,7 @@ for k = 1:N-1
         p_rel = (ck(xyz_idx) - r_hip);
 
         kin_box_x = 0.125 + kin_box(1);
-        kin_box_y = 0.10 + kin_box(2);
+        kin_box_y = 0.125 + kin_box(2);
         kin_box_z_upper = -0.075;
         kin_box_z_lower = -0.4;
         
@@ -175,17 +175,6 @@ for k = 1:N-1
         opti.subject_to(-model.tauMax(3) <= tau_leg(xyz_idx(3), k) <= model.tauMax(3));
     end
     
-    % motor voltage limits
-    if (k+1 < N && k > 1)
-        tau_motor_des_i = tau_leg(:,i) ./ repmat(model.gr,4,1);
-        current_des_i = tau_motor_des_i ./ (1.5*repmat(model.kt, 4, 1));
-        joint_vel_i = (jposk - jpos(:, k-1))./dt_val(1);
-        back_emf_i = joint_vel_i .* repmat(model.gr, 4, 1) .* repmat(model.kt, 4, 1) * 2.0;
-        v_des_i = current_des_i .* repmat(model.Rm, 4, 1) + back_emf_i;
-        opti.subject_to(v_des_i <= model.batteryV);
-        opti.subject_to(v_des_i >= -model.batteryV);        
-    end
-
     % friction constraints
     opti.subject_to(fk([1 4 7 10]) <= 0.71*mu*fk([3 6 9 12]));
     opti.subject_to(fk([1 4 7 10]) >= -0.71*mu*fk([3 6 9 12]));
@@ -202,14 +191,25 @@ for k = 1:N-1
     opti.subject_to(ck - footPosk <= 0.01);
     opti.subject_to(jposk >= jpos_min);
     opti.subject_to(jposk <= jpos_max);
+    
+%     % motor voltage limits (ignored, because motors experiencing negative work)
+%     if (k+1 < N && k > 1)
+%         tau_motor_des_i = tau_leg(:,i) ./ repmat(model.gr,4,1);
+%         current_des_i = tau_motor_des_i ./ (1.5*repmat(model.kt, 4, 1));
+%         joint_vel_i = (jposk - jpos(:, k-1))./dt_val(1);
+%         back_emf_i = joint_vel_i .* repmat(model.gr, 4, 1) .* repmat(model.kt, 4, 1) * 2.0;
+%         v_des_i = current_des_i .* repmat(model.Rm, 4, 1) + back_emf_i;
+%         opti.subject_to(v_des_i <= model.batteryV);
+%         opti.subject_to(v_des_i >= -model.batteryV);        
+%     end
 end
 
 %% reference trajectories
 
 sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 
-q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (pi/4)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';
-qd_init_val = [0.5*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -3.5*rand(1)-1]';
+q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major roll
+qd_init_val = [0.5*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -4.5*rand(1)-0.5]';
 
 for leg = 1:4
     hip_world(:, leg) = rpyToRotMat_xyz(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
@@ -327,21 +327,21 @@ opti.set_initial([X(:)],[X_star_guess(:)]);
 
 jpos_guess = repmat([0, -pi/4, pi/2]', 4*(N-1), 1);
 opti.set_initial(jpos(:), jpos_guess);
-% opti.set_initial(U(:),Uref_val(:));
-% opti.set_initial(X(:),Xref_val(:));   % generally causes difficulties converging
 
 %% KNITRO options
 p_opts = struct('expand',true); % this speeds up ~x10
 s_opts = struct('linsolver',4,... %4 works well
-        'outlev', 2,...0
+        'honorbnds',0,... % 0-2, {2}
         'strat_warm_start',1,...
-        'algorithm',0,...
+        'outlev',0,... % 0-6
+        'algorithm',1,...
         'bar_murule',2,... % 5 works well
         'feastol',1e-4,...
         'tuner',0,...
         'bar_feasible',0,... %0 works well
         'bar_directinterval',10,...
-        'maxit',1500);%,...
+        'maxtime_real',4.0,...
+        'maxit',500);%,...
 
 opti.solver('knitro', p_opts, s_opts);
 
@@ -359,7 +359,6 @@ if make_casadi_function
     nlp_opts.jit=true;
 
     jit_options = struct('flags', '-O1', 'verbose', true, 'compiler', 'ccache gcc');
-%             options = struct('jit', true, 'compiler', 'shell', 'jit_options', jit_options);
     nlp_opts.compiler='shell';
     nlp_opts.jit_options=jit_options;
     nlp_opts.jit_temp_suffix=false;
@@ -384,7 +383,7 @@ if make_casadi_function
         dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
         q_init_val, qd_init_val, c_init_val, ...
         q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
-        QN_val, [X_star_guess(:);U_star_guess(:); jpos_guess],...
+        QN_val, [X_star_guess(:); U_star_guess(:); jpos_guess],...
         jpos_min_val, jpos_max_val, kin_box_val, mu_val, l_leg_max_val, mass_val,...
         diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
     toc
@@ -460,22 +459,6 @@ for i = 1:N-1
     v(:, i) = v_des_i;
 end
 v = [zeros(12, 1) v];
-
-%% inverse kinematics, if called
-q_foot_guess = repmat([0 -0.7 1.45]', 4, 1);
-
-if run_IK
-    for i = 1:N-1
-        [x, fval, exitflag] = inverse_kinematics(U_star(1:12,i), model, q_star(1:6,i), q_foot_guess);
-        if exitflag <= 0
-            q_star(7:18,i) = q_foot_guess;
-        end
-        q_star(7:18,i) = x;
-    end
-    q_star(7:18,N) = q_star(7:18,N-1);
-else
-    q_star(7:18,:) = repmat(repmat(q_leg_home', 4, 1),1,N);
-end
 
 %% plots
 if make_plots
@@ -582,26 +565,6 @@ if make_plots
     title('Voltage Limits')
     hold off;
     
-    
-    
-%     % Foot locations
-%     figure; hold on;
-%     for leg = 1:4
-%         xyz_idx = 3*leg-2 : 3*leg;
-%         for i = 1:N-1
-%             R_world_to_body = rpyToRotMat_xyz(q_star(4:6, i))';
-%             p_foot_rel(xyz_idx, i) = R_world_to_body*(p_star(xyz_idx, i) - q_star(1:3, i));
-%             p_foot_rel(xyz_idx, i) = p_foot_rel(xyz_idx, i) - params.hipSrbmLocation(leg, :)';
-%         end
-%     end
-%     plot(p_foot_rel(1, :), p_foot_rel(2, :))
-%     plot(p_foot_rel(4, :), p_foot_rel(5, :))
-%     plot(p_foot_rel(7, :), p_foot_rel(8, :))
-%     plot(p_foot_rel(10, :), p_foot_rel(11, :))
-%     
-%     xlabel('x'); ylabel('y'); zlabel('z')
-%     title('Foot locations')
-%     hold off;
     
 end
     
