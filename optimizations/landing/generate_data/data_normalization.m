@@ -63,7 +63,7 @@ save('data/data_stats.mat', 'data_stats')
 
 % normalize input data
 training_data_normalized.input = (training_data.input - mean_input)./std_input;
-training_data_normalized.output = zeros(length(training_data.output(:,1)) + 4, 1);
+training_data_normalized.output = zeros(length(training_data.output(:,1)) + 4*(N-1), 1);
 
 for data_entry = 1:length(training_data.input)
     %% reshape data
@@ -74,7 +74,8 @@ for data_entry = 1:length(training_data.input)
     jpos_k  = reshape(output_k(numel(X_tmp) + numel(U_tmp) + 1:numel(X_tmp) + numel(jpos_tmp) + numel(U_tmp)), size(jpos_tmp));
 
     f_k     = U_k(13:24, :);
-    td      = zeros(4, 1);
+%     td      = zeros(4, 1);
+    indexed_td = zeros(4, 20);
     
     X_norm = X_tmp; U_norm = U_tmp; jpos_norm = jpos_tmp;
     
@@ -87,7 +88,8 @@ for data_entry = 1:length(training_data.input)
         f_leg_offset = f_leg(:, td_idx:end);
         f_leg_offset = [f_leg_offset repmat(f_leg_offset(:, end), 1, td_idx-1)];
         
-        td(leg) = td_idx;                           % store touchdown indices
+%         td(leg) = td_idx;                           % store touchdown indices
+        indexed_td(leg, td_idx) = 1;
         
         % normalize offset ground reaction forces with bodyweight (could also try min-max normalization)
         min_grf     = min(f_leg_offset,[],2);
@@ -107,11 +109,11 @@ for data_entry = 1:length(training_data.input)
     jpos_norm = (jpos_k - mean_jpos)./std_jpos;
 
     %% store normalized data
-    training_data_normalized.output(:, data_entry) = [X_norm(:); U_norm(:); jpos_norm(:); td];
+    training_data_normalized.output(:, data_entry) = [X_norm(:); U_norm(:); jpos_norm(:); reshape(indexed_td.', numel(indexed_td), 1)];
 
 end
 
-save('data/training_data_normalized.mat', 'training_data_normalized', '-V7.3')
+save('data/training_data_normalized_idx.mat', 'training_data_normalized', '-V7.3')
 
 %% test denormalization
 sample_idx = randi(1000, 1);
