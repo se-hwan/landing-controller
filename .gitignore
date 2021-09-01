@@ -1,0 +1,7 @@
+*.mat
+casadi/*
+codegen_casadi/*
+tmp*
+jit*
+*.c
+*.so
