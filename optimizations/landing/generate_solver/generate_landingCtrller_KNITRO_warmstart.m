@@ -42,8 +42,8 @@ opti = casadi.Opti();
 X = opti.variable(12, N);               % floating base
 q       = X(1:6,:);
 qdot    = X(7:12,:);
-jpos    = opti.variable(12, N-1);         % joint positions
 U = opti.variable(6*model.NLEGS, N-1);  % foot posns + GRFs
+jpos    = opti.variable(12, N-1);         % joint positions
 c     = U(1:12,:);
 f_grf = U(13:24,:);
 
@@ -112,8 +112,8 @@ for k = 1:N-1
     jposk = jpos(:, k);
     
     % rotation matrices
-    R_world_to_body = rpyToRotMat_xyz(rpyk(1:3))';
-    R_body_to_world = rpyToRotMat_xyz(rpyk(1:3));
+    R_world_to_body = rpyToRotMat(rpyk(1:3))';
+    R_body_to_world = rpyToRotMat(rpyk(1:3));
     
     % dynamics
     rddot = (1/mass).*sum(reshape(fk,3,model.NLEGS),2)+model.gravity';
@@ -211,7 +211,7 @@ q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.25)*(2*rand(1)-1)
 qd_init_val = [0.5*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -4.5*rand(1)-0.5]';
 
 for leg = 1:4
-    hip_world(:, leg) = rpyToRotMat_xyz(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
+    hip_world(:, leg) = rpyToRotMat(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
 end
 td_hip_z = abs(min(hip_world(3,:)));
 
@@ -237,7 +237,7 @@ c_init_val = zeros(12, 1);
 for leg = 1:4
     xyz_idx = 3*leg-2 : 3*leg;
     p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.15 -0.3]';
-    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat_xyz(q_init_val(4:6))*p_foot_rel;
+    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat(q_init_val(4:6))*p_foot_rel;
 end
 
 q_leg_home = [0 -1.45 2.65];
@@ -249,7 +249,7 @@ Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 jpos_min_val = repmat([-pi/3, -pi/2, 0]', 4, 1);
 jpos_max_val = repmat([pi/3, pi/2, 3*pi/4]', 4, 1);
 
-v_body = rpyToRotMat_xyz(q_init_val(4:6))'*(qd_init_val(4:6));
+v_body = rpyToRotMat(q_init_val(4:6))'*(qd_init_val(4:6));
 
 kin_box_val = [kin_box_limits(v_body(1), 'x'); kin_box_limits(v_body(2), 'y')];
 
@@ -275,7 +275,7 @@ end
 for i = 1:N-1
     for leg = 1:4
         xyz_idx = 3*leg-2 : 3*leg;
-        Uref_val(xyz_idx, i) = Xref_val(1:3, i) + rpyToRotMat_xyz(Xref_val(4:6, i))*c_ref(xyz_idx);
+        Uref_val(xyz_idx, i) = Xref_val(1:3, i) + rpyToRotMat(Xref_val(4:6, i))*c_ref(xyz_idx);
     end
 end
 
@@ -342,7 +342,7 @@ s_opts = struct('algorithm',1,... % 0-5, {0}
             'ftol',1e-15,... % 0-inf {1e-15}
             'infeastol',1e-8,... % 0-inf {1e-8} (smaller = more likely to be feasible)
             'maxit',500,...
-            'maxtime_real',4.0,...
+            'maxtime_real',1.0,...
             'opttol',1e-6,... % 0-inclf {1e-6}
             'OptTolAbs',1e-3,... % 0-inf {1e-3}
             'xtol',1e-12,... % 0-inf {1e-12}
@@ -351,8 +351,9 @@ s_opts = struct('algorithm',1,... % 0-5, {0}
             'outlev',0,... % 0-6
             'outmode',0,... % 0-2
             'tuner',0,... % 0-1
-            'tuner_maxtime_real',500,...
+            'tuner_maxtime_real',1.0,...
             'tuner_terminate',0);        
+        
 opti.solver('knitro', p_opts, s_opts);
 disp_box('Solving with Opti Stack');
 tic
@@ -364,6 +365,7 @@ if make_casadi_function
     disp_box('Building Solver with (or without) Simple Bounds');
     nlp_opts = p_opts;
     nlp_opts.knitro = s_opts;
+    nlp_opts.error_on_fail = true;
     nlp_opts.jit=true;
 
     jit_options = struct('flags', '-O1', 'verbose', true, 'compiler', 'ccache gcc');
@@ -415,7 +417,7 @@ if make_casadi_function
     save_casadi_function = input('Save Casadi Function? ');
     if save_casadi_function
         f.save('../codegen_casadi/landingCtrller_KNITRO_ws.casadi');
-        save('landingCtrller_KNITRO_ws.mat','f')
+%         save('landingCtrller_KNITRO_ws.mat','f')
     end
     
 end
@@ -444,7 +446,7 @@ save('prevSoln.mat','X_star','U_star','jpos_star','lam_g_star');
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    R_world_to_body = rpyToRotMat_xyz(q_star(4:6, i))';
+    R_world_to_body = rpyToRotMat(q_star(4:6, i))';
     J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;

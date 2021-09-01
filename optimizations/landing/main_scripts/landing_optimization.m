@@ -109,8 +109,8 @@ for k = 1:N-1
     jposk = jpos(:, k);
     
     % rotation matrices
-    R_world_to_body = rpyToRotMat_xyz(rpyk(1:3))';
-    R_body_to_world = rpyToRotMat_xyz(rpyk(1:3));
+    R_world_to_body = rpyToRotMat(rpyk(1:3))';
+    R_body_to_world = rpyToRotMat(rpyk(1:3));
     
     % dynamics
     rddot = (1/mass).*sum(reshape(fk,3,model.NLEGS),2)+model.gravity';
@@ -205,10 +205,12 @@ end
 sideSign = [1 -1 1, 1 1 1, -1 -1 1, -1 1 1];
 
 q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major roll
-qd_init_val = [0.5*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -4.5*rand(1)-0.5]';
+qd_init_val = [0.5*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -3*rand(1)-0.5]';
+
+% q_init_val = [0 0 0 0 pi/3 0]'; qd_init_val = [0 0 0 0 0 -2.5]';
 
 for leg = 1:4
-    hip_world(:, leg) = rpyToRotMat_xyz(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
+    hip_world(:, leg) = rpyToRotMat(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
 end
 td_hip_z = abs(min(hip_world(3,:)));
 
@@ -234,7 +236,7 @@ c_init_val = zeros(12, 1);
 for leg = 1:4
     xyz_idx = 3*leg-2 : 3*leg;
     p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.15 -0.3]';
-    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat_xyz(q_init_val(4:6))*p_foot_rel;
+    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat(q_init_val(4:6))*p_foot_rel;
 end
 
 q_leg_home = [0 -1.45 2.65];
@@ -246,7 +248,7 @@ Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 jpos_min_val = repmat([-pi/3, -pi/2, 0]', 4, 1);
 jpos_max_val = repmat([pi/3, pi/2, 3*pi/4]', 4, 1);
 
-v_body = rpyToRotMat_xyz(q_init_val(4:6))'*(qd_init_val(4:6));
+v_body = rpyToRotMat(q_init_val(4:6))'*(qd_init_val(4:6));
 
 kin_box_val = [kin_box_limits(v_body(1), 'x'); kin_box_limits(v_body(2), 'y')];
 
@@ -257,7 +259,7 @@ QN_val = [0 0 100, 10 10 0, 10 10 10, 10 10 10]';
 
 mu_val = 0.75;
 l_leg_max_val = .4;
-f_max_val = 300;
+f_max_val = 400;
 
 %% set parameter values
 for i = 1:6
@@ -272,7 +274,7 @@ end
 for i = 1:N-1
     for leg = 1:4
         xyz_idx = 3*leg-2 : 3*leg;
-        Uref_val(xyz_idx, i) = Xref_val(1:3, i) + rpyToRotMat_xyz(Xref_val(4:6, i))*c_ref(xyz_idx);
+        Uref_val(xyz_idx, i) = Xref_val(1:3, i) + rpyToRotMat(Xref_val(4:6, i))*c_ref(xyz_idx);
     end
 end
 
@@ -359,7 +361,7 @@ opti.solver('ipopt',p_opts,s_opts);
 
 s_opts = struct('linsolver',4,... %4 works well
         'outlev', 2,...0
-        'strat_warm_start',1,...
+        'strat_warm_start',0,...
         'algorithm',0,...
         'bar_murule',2,... % 5 works well
         'feastol',1e-4,...
@@ -454,7 +456,7 @@ for k = 2:N
 end
 
 if(show_animation)
-    showmotion(model,t_star(1:end-1),q_star(:,1:end-1))
+    showmotion_floatingBase(model,t_star(1:end-1),q_star(:,1:end-1))
 end
 
 if show_plots

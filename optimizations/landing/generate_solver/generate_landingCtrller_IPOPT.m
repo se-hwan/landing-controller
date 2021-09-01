@@ -255,6 +255,7 @@ s_opts = struct('max_iter',3000,... %'max_cpu_time',9.0,...
     'linear_scaling_on_demand','yes',... % {'yes','no'};
     'max_refinement_steps',10,... % (10)
     'min_refinement_steps',1,... % (1)
+    'max_cpu_time', 10.0,...
     'warm_start_init_point', 'yes'); % (no)
 
 s_opts.file_print_level = 0;
@@ -356,7 +357,7 @@ if make_casadi_function
     save_casadi_function = input('Save Casadi Function? ');
     if save_casadi_function
         f.save('../codegen_casadi/landingCtrller_IPOPT.casadi');
-        save('landingCtrller_IPOPT.mat','f')
+%         save('landingCtrller_IPOPT.mat','f')
     end
     
 end

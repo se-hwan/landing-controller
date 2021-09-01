@@ -40,7 +40,7 @@ function [] = plot_results(model, params, t_star, X_star, U_star, jpos_star)
 
     %% plots
     figure;
-    t = tiledlayout(4, 3);
+    t = tiledlayout(3, 3);
     t.Padding = 'compact';
     t.TileSpacing = 'compact';
 
@@ -116,30 +116,34 @@ function [] = plot_results(model, params, t_star, X_star, U_star, jpos_star)
     % torque limits
     nexttile([1 3])
     hold on;
-    plot(t_star(1:end-1), [torque(1, :);torque(4, :);torque(7, :);torque(10, :)], 'r-')
-    plot(t_star(1:end-1), model.tauMax(1)*ones(1, N-1), 'r--')
-    plot(t_star(1:end-1), -model.tauMax(1)*ones(1, N-1), 'r--')
-    plot(t_star(1:end-1), [torque(2, :);torque(5, :);torque(8, :);torque(11, :)], 'g-')
-    plot(t_star(1:end-1), model.tauMax(2)*ones(1, N-1), 'g--')
-    plot(t_star(1:end-1), -model.tauMax(2)*ones(1, N-1), 'g--')
-    plot(t_star(1:end-1), [torque(3, :);torque(6, :);torque(9, :);torque(12, :)], 'b-')
-    plot(t_star(1:end-1), model.tauMax(3)*ones(1, N-1), 'b--')
-    plot(t_star(1:end-1), -model.tauMax(3)*ones(1, N-1), 'b--')
+    L(1) = plot(0, 0, 'r-');
+    plot(t_star(1:end-1), [torque(1, :);torque(4, :);torque(7, :);torque(10, :)], 'r-');
+    plot(t_star(1:end-1), model.tauMax(1)*ones(1, N-1), 'r--');
+    plot(t_star(1:end-1), -model.tauMax(1)*ones(1, N-1), 'r--');
+    L(2) = plot(0, 0, 'g-');
+    plot(t_star(1:end-1), [torque(2, :);torque(5, :);torque(8, :);torque(11, :)], 'g-');
+    plot(t_star(1:end-1), model.tauMax(2)*ones(1, N-1), 'g--');
+    plot(t_star(1:end-1), -model.tauMax(2)*ones(1, N-1), 'g--');
+    L(3) = plot(0, 0, 'b-');
+    plot(t_star(1:end-1), [torque(3, :);torque(6, :);torque(9, :);torque(12, :)], 'b-');
+    plot(t_star(1:end-1), model.tauMax(3)*ones(1, N-1), 'b--');
+    plot(t_star(1:end-1), -model.tauMax(3)*ones(1, N-1), 'b--');
     xlabel('Time (s)'); ylabel('Torque (Nm)')
+    legend(L, {'Ab/ad', 'Hip', 'Knee'})
     title("Torque Limits")
     hold off;
 
-    % voltage limits
-    nexttile([1 3])
-    hold on;
-    plot(t_star(:), model.batteryV*ones(1, N), 'k--')
-    plot(t_star(:), -model.batteryV*ones(1, N), 'k--')
-    for i = 1:12
-        plot(t_star(:), v(i, :))
-    end
-    xlabel('Time (s)'); ylabel('Voltage (V)')
-    axis([0, t_star(end), -26, 26])
-    title('Voltage Limits')
-    hold off;
+%     % voltage limits
+%     nexttile([1 3])
+%     hold on;
+%     plot(t_star(:), model.batteryV*ones(1, N), 'k--')
+%     plot(t_star(:), -model.batteryV*ones(1, N), 'k--')
+%     for i = 1:12
+%         plot(t_star(:), v(i, :))
+%     end
+%     xlabel('Time (s)'); ylabel('Voltage (V)')
+%     axis([0, t_star(end), -26, 26])
+%     title('Voltage Limits')
+%     hold off;
 
 end

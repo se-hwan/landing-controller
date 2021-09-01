@@ -12,9 +12,9 @@ model  = get_robot_model(params);
 model  = buildShowMotionModel(params, model);
 
 %% Load and parse data
-input = readtable('data/custom_normalization/input_1.csv'); input = input.Var1;
-nn_pred = readtable('data/custom_normalization/nnpred_1.csv'); nn_pred = nn_pred.Var1;
-output = readtable('data/custom_normalization/output_1.csv'); output = output.Var1;
+input = readtable('data/time_idx_normalization/input_0.csv'); input = input.Var1;
+nn_pred = readtable('data/time_idx_normalization/nnpred_0.csv'); nn_pred = nn_pred.Var1;
+output = readtable('data/time_idx_normalization/original_0.csv'); output = output.Var1;
 
 N = 21;
 
@@ -35,12 +35,12 @@ for k = 2:N
 end
 
 %% visualization - NLP
-showmotion(model,t_star(1:end-1),q_nlp(:,1:end-1))
+showmotion_floatingBase(model,t_star(1:end-1),q_nlp(:,1:end-1))
 if show_plots
     plot_results(model, params, t_star, X_nlp, U_nlp, jpos_nlp);
 end
 %% visualization - NN
-showmotion(model,t_star(1:end-1),q_nn(:,1:end-1))
+showmotion_floatingBase(model,t_star(1:end-1),q_nn(:,1:end-1))
 if show_plots
     plot_results(model, params, t_star, X_nn, U_nn, jpos_nn);
 end

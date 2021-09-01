@@ -43,8 +43,8 @@ opti = casadi.Opti();
 X = opti.variable(12, N);               % floating base
 q       = X(1:6,:);
 qdot    = X(7:12,:);
-jpos    = opti.variable(12, N-1);         % joint positions
 U = opti.variable(6*model.NLEGS, N-1);  % foot posns + GRFs
+jpos    = opti.variable(12, N-1);         % joint positions
 c     = U(1:12,:);
 f_grf = U(13:24,:);
 
@@ -113,8 +113,8 @@ for k = 1:N-1
     jposk = jpos(:, k);
     
     % rotation matrices
-    R_world_to_body = rpyToRotMat_xyz(rpyk(1:3))';
-    R_body_to_world = rpyToRotMat_xyz(rpyk(1:3));
+    R_world_to_body = rpyToRotMat(rpyk(1:3))';
+    R_body_to_world = rpyToRotMat(rpyk(1:3));
     
     % dynamics
     rddot = (1/mass).*sum(reshape(fk,3,model.NLEGS),2)+model.gravity';
@@ -212,7 +212,7 @@ q_init_val = [0 0 0 (.25)*(2*rand(1)-1) (pi/3)*(2*rand(1)-1) (.25)*(2*rand(1)-1)
 qd_init_val = [0.5*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -4.5*rand(1)-0.5]';
 
 for leg = 1:4
-    hip_world(:, leg) = rpyToRotMat_xyz(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
+    hip_world(:, leg) = rpyToRotMat(q_init_val(4:6))*params.hipSrbmLocation(leg, :)';
 end
 td_hip_z = abs(min(hip_world(3,:)));
 
@@ -238,7 +238,7 @@ c_init_val = zeros(12, 1);
 for leg = 1:4
     xyz_idx = 3*leg-2 : 3*leg;
     p_foot_rel = sideSign(xyz_idx)'.*[0.2 0.15 -0.3]';
-    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat_xyz(q_init_val(4:6))*p_foot_rel;
+    c_init_val(xyz_idx) = q_init_val(1:3) + rpyToRotMat(q_init_val(4:6))*p_foot_rel;
 end
 
 q_leg_home = [0 -1.45 2.65];
@@ -250,7 +250,7 @@ Ibody_inv_val = inv(Ibody_val(1:3,1:3));
 jpos_min_val = repmat([-pi/3, -pi/2, 0]', 4, 1);
 jpos_max_val = repmat([pi/3, pi/2, 3*pi/4]', 4, 1);
 
-v_body = rpyToRotMat_xyz(q_init_val(4:6))'*(qd_init_val(4:6));
+v_body = rpyToRotMat(q_init_val(4:6))'*(qd_init_val(4:6));
 
 kin_box_val = [kin_box_limits(v_body(1), 'x'); kin_box_limits(v_body(2), 'y')];
 
@@ -276,7 +276,7 @@ end
 for i = 1:N-1
     for leg = 1:4
         xyz_idx = 3*leg-2 : 3*leg;
-        Uref_val(xyz_idx, i) = Xref_val(1:3, i) + rpyToRotMat_xyz(Xref_val(4:6, i))*c_ref(xyz_idx);
+        Uref_val(xyz_idx, i) = Xref_val(1:3, i) + rpyToRotMat(Xref_val(4:6, i))*c_ref(xyz_idx);
     end
 end
 
@@ -435,7 +435,7 @@ save('prevSoln.mat','X_star','U_star','jpos_star','lam_g_star');
 J_foot = cell(4, N-1);
 torque = zeros(12, N-1);
 for i = 1:N-1
-    R_world_to_body = rpyToRotMat_xyz(q_star(4:6, i))';
+    R_world_to_body = rpyToRotMat(q_star(4:6, i))';
     J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
     for leg = 1:4
         xyz_idx = 3*leg-2:3*leg;

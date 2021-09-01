@@ -168,10 +168,10 @@ elseif(strcmp(params.model,'quad3D')) % 3D quadruped model in spatial coords
     model.jtype{nb}  = 'Pz';
     model.Xtree{nb}  = eye(6);
     model.I{nb}      = zeros(6);
-    % Base roll (no mass)
+    % Base yaw (no mass)
     nb = nb + 1;
     model.parent(nb) = nb - 1;
-    model.jtype{nb} = 'Rx';
+    model.jtype{nb} = 'Rz';
     model.Xtree{nb} = eye(6);
     model.I{nb}     = zeros(6);
     % Base pitch (no mass)
@@ -180,10 +180,10 @@ elseif(strcmp(params.model,'quad3D')) % 3D quadruped model in spatial coords
     model.jtype{nb} = 'Ry';
     model.Xtree{nb} = eye(6);
     model.I{nb}     = zeros(6);
-    % Base yaw (no mass)
+    % Base roll (no mass)
     nb = nb + 1;
     model.parent(nb) = nb - 1;
-    model.jtype{nb} = 'Rz';
+    model.jtype{nb} = 'Rx';
     model.Xtree{nb} = eye(6);
     model.I{nb}     = params.bodyInertia;
     

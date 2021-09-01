@@ -61,6 +61,16 @@ data_stats.mass = mass_val;
 
 save('data/data_stats.mat', 'data_stats')
 
+% prepare normalization values for export
+
+mean_U_offset = mean_U; mean_U_offset(13:24, :) = 0.0;
+std_U_offset = std_U; std_U_offset(13:24, :) = mass_val*9.81;
+landing_norm_param = [data_stats.mean_input(:); data_stats.std_input(:); mean_X(:); mean_U_offset(:); mean_jpos(:);
+                      std_X(:); std_U_offset(:); std_jpos(:)];
+
+fid = fopen('landing_norm_param.dat','w');
+fwrite(fid,landing_norm_param,'single');
+
 % normalize input data
 training_data_normalized.input = (training_data.input - mean_input)./std_input;
 training_data_normalized.output = zeros(length(training_data.output(:,1)) + 4*(N-1), 1);
@@ -117,6 +127,22 @@ save('data/training_data_normalized_idx.mat', 'training_data_normalized', '-V7.3
 
 %% test denormalization
 sample_idx = randi(1000, 1);
+
+sample_idx = 766;
+sample_idx = 166;
+sample_idx = 480;
+sample_idx = 205; % not bad, but sus
+sample_idx = 293;
+sample_idx = 930;
+sample_idx = 450; % not terrible
+sample_idx = 830;
+sample_idx = 113;
+sample_idx = 290;
+sample_idx = 601; % fine
+sample_idx = 664; % fine
+sample_idx = 735; % not bad, but unusual
+sample_idx = 674;
+
 normalized_data_sample = training_data_normalized.output(:, sample_idx);
 [X_dn, U_dn, jpos_dn] = data_denormalization(normalized_data_sample);
 
@@ -126,7 +152,7 @@ q_star(7:18,1:end-1) = jpos_dn; q_star(7:18, end) = q_star(7:18, end-1);
 f_star = U_dn(13:24, :); p_star = U_dn(1:12, :);
 
 if show_animation
-    showmotion(model,t_star(1:end-1),q_star(:,1:end-1))
+    showmotion_floatingBase(model,t_star(1:end-1),q_star(:,1:end-1))
 end
 if show_plots
     plot_results(model, params, t_star, X_dn, U_dn, jpos_dn);
@@ -151,7 +177,7 @@ f_star = U_star(13:24, :); p_star = U_star(1:12, :);
 
 
 if show_animation
-    showmotion(model,t_star(1:end-1),q_star(:,1:end-1))
+    showmotion_floatingBase(model,t_star(1:end-1),q_star(:,1:end-1))
 end
 if show_plots
     plot_results(model, params, t_star, X_star, U_star, jpos_star);

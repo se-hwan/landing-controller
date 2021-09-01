@@ -69,6 +69,9 @@ th3_error = rad2deg(th3) - rad2deg(q_test(3));
 %% forward kinematics
 R_world_to_body = rpyToRotMatTest(fb_test(4:6))';
 R_body_to_world = rpyToRotMatTest(fb_test(4:6));
+
+R_world_to_body = rpyToRotMat(fb_test(4:6))';
+R_body_to_world = rpyToRotMat(fb_test(4:6));
 com_world = fb_test(1:3);
 hip_world = com_world + R_body_to_world*hip_ref(xyz_idx);
 foot_relHip = [l_2*sin(q_test(2)) + l_3*sin(q_test(2) + q_test(3));
