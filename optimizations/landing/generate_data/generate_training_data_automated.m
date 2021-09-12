@@ -33,7 +33,7 @@ f_knitro = Function.load('../codegen_casadi/landingCtrller_KNITRO.casadi');
 f_knitro_ws = Function.load('../codegen_casadi/landingCtrller_KNITRO_ws.casadi');
 
 %% main optimization loop
-N_samples = 3000; % number of optimizations
+N_samples = 5000; % number of optimizations
 
 for cntr = 1:N_samples
 
@@ -289,7 +289,7 @@ end
 
 %% test samples of training data
 
-sample_idx = 346;
+sample_idx = randi(1658);
 
 res.x = training_data.output(:, sample_idx);
 X_star = reshape(res.x(1:numel(X_tmp)),size(X_tmp));

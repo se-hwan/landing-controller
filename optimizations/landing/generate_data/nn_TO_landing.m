@@ -75,7 +75,7 @@ function [x16, state] = nn_TO_landing(x0, params, varargin)
 % X16
 %			- Output(s) of the ONNX network.
 %			  Without permutation, the size(s) of the outputs are:
-%				  X16:		[1, 976]				Type: FLOAT
+%				  X16:		[1, 972]				Type: FLOAT
 %			  By default, the function will try to permute the output(s)
 %			  from this dimension ordering into a conventional MATLAB
 %			  ordering. If the default is incorrect, use the

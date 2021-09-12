@@ -1,4 +1,3 @@
-*.mat
 casadi/*
 codegen_casadi/*
 tmp*

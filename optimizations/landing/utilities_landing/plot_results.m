@@ -13,7 +13,7 @@ function [] = plot_results(model, params, t_star, X_star, U_star, jpos_star)
     % jacobian torque calculation
     torque = zeros(12, N-1);
     for i = 1:N-1
-        R_world_to_body = rpyToRotMat_xyz(q_star(4:6, i))';
+        R_world_to_body = rpyToRotMat(q_star(4:6, i))';
         J_f = get_foot_jacobians_mc(model, params, jpos_star(:, i));
         for leg = 1:4
             xyz_idx = 3*leg-2:3*leg;

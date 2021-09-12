@@ -14,11 +14,17 @@ model  = get_robot_model(params);
 model  = buildShowMotionModel(params, model);
 
 %% import trained network
-modelfile = 'neural_networks/indexedTime_2x64_bs16.onnx';
+modelfile = 'neural_networks/nn_TO_landing.onnx';
+nn_params = importONNXFunction(modelfile,'nn_TO_landing');
+
+modelfile = 'neural_networks/old/indexedTime_2x64_bs16.onnx';
 nn_params = importONNXFunction(modelfile,'indexedTime_2x64_bs16');
 
+modelfile = 'neural_networks/nn-landing-NODES-64-BATCHSIZE-16.onnx';
+nn_params = importONNXFunction(modelfile,'nn_landing_n64_b16');
+
 %% load normalized statistics
-load('data/data_stats.mat');
+load('data/landing_norm_param.mat');
 input_mean = data_stats.mean_input;
 input_std = data_stats.std_input;
 
@@ -42,9 +48,12 @@ for n = 1:N_trials
     
 %% initial falling conditions
 q_init_val = [0 0 0 (0.25)*(2*rand(1)-1) (0.25)*(2*rand(1)-1) (.25)*(2*rand(1)-1)]';     % major pitch
-qd_init_val = [0.1*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -3*rand(1)-1]';
+qd_init_val = [0.1*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -3*rand(1)-3]';
 
-q_init_val = [0 0 0 0 pi/3 0]'; qd_init_val = [0 0 0 0 0 -2]';
+q_init_val = [0 0 0 (0.25)*(2*rand(1)-1) pi/4 (.25)*(2*rand(1)-1)]';     % major pitch
+qd_init_val = [0.1*(2*rand(1,3)-1) 1*(2*rand(1, 2)-1) -3*rand(1)-3]';
+
+q_init_val = [0 0 0 0 pi/4 pi/4]'; qd_init_val = [0 0 0 0 0 -3]';
 %% timestep parameters
 dt_val = [0.05 repmat(0.02, 1, 15) [0.05 0.05 0.1 0.2]];
 t_star = zeros(1,N);
@@ -136,24 +145,24 @@ inputPerm = preparePermutationVector(["FeaturesLength","SequenceLength","BatchSi
     ["SequenceLength","BatchSize","FeaturesLength"]);
 
 tic
+% nn_ws = double(nn_landing_n64_b16(nn_input', nn_params, 'InputDataPermutation', inputPerm));
 nn_ws = double(indexedTime_2x64_bs16(nn_input', nn_params, 'InputDataPermutation', inputPerm));
-% nn_ws = double(nn_landing(nn_input, nn_params));
+% nn_ws = double(indexedTime_2x64_bs16(nn_input, nn_params));
 
 [X_nn, U_nn, jpos_nn] = data_denormalization(nn_ws);
+% U_nn(13:24, :) = zeros(12, N-1);
 q_nn(1:6,:) = X_nn(1:6, :); qd_nn = X_nn(7:12, :);
 q_nn(7:18,1:end-1) = jpos_nn; q_nn(7:18, end) = q_nn(7:18, end-1);
 f_nn = U_nn(13:24, :); p_nn = U_nn(1:12, :);
 
 if show_animation
     showmotion_floatingBase(model,t_star(1:end-1),q_nn(:,1:end-1))
-end
-if show_plots
     plot_results(model, params, t_star, X_nn, U_nn, jpos_nn);
 end
 
 %% solve with NN warm start
 % tic
-[res.x,res.f, exitflag] = f_knitro_ws(Xref_val, Uref_val,...
+[res.x,res.f] = f_knitro_ws(Xref_val, Uref_val,...
         dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
         q_init_val, qd_init_val, c_init_val, ...
         q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
@@ -161,6 +170,28 @@ end
         jpos_min_val, jpos_max_val, kin_box_val, mu_val, l_leg_max_val, mass_val,...
         diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
 t_solve_nn_ws = toc; disp("NN WARM STARTED SOLVE TIME: " + num2str(t_solve_nn_ws));
+t_solve(2,n) = t_solve_nn_ws;
+
+% U_nn(13:24, :) = zeros(12, N-1);
+[res.x,res.f] = f_knitro(Xref_val, Uref_val,...
+        dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
+        q_init_val, qd_init_val, c_init_val, ...
+        q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
+        QN_val, [X_nn(:); U_nn(:); jpos_nn(:)],...
+        jpos_min_val, jpos_max_val, kin_box_val, mu_val, l_leg_max_val, mass_val,...
+        diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
+t_solve_nn_ws = toc; disp("NN WARM STARTED SOLVE TIME v2: " + num2str(t_solve_nn_ws));
+t_solve(2,n) = t_solve_nn_ws;
+
+
+[res.x,res.f] = f_knitro_ws(Xref_val, Uref_val,...
+        dt_val,q_min_val, q_max_val, qd_min_val, qd_max_val,...
+        q_init_val, qd_init_val, c_init_val, ...
+        q_term_min_val, q_term_max_val, qd_term_min_val, qd_term_max_val,...
+        QN_val, [X_nn(:); U_nn(:); jpos_nn(:)],...
+        jpos_min_val, jpos_max_val, kin_box_val, mu_val, l_leg_max_val, mass_val,...
+        diag(Ibody_val(1:3,1:3)), diag(Ibody_inv_val(1:3,1:3)));
+t_solve_nn_ws = toc; disp("NN WARM STARTED SOLVE TIME ZERO FORCES: " + num2str(t_solve_nn_ws));
 t_solve(2,n) = t_solve_nn_ws;
 
 res.x = full(res.x);
@@ -175,7 +206,7 @@ f_star = U_star(13:24, :); p_star = U_star(1:12, :);
 
 
 if show_animation
-    showmotion(model,t_star(1:end-1),q_star(:,1:end-1))
+    showmotion_floatingBase(model,t_star(1:end-1),q_star(:,1:end-1))
 end
 if show_plots
     plot_results(model, params, t_star, X_star, U_star, jpos_star);

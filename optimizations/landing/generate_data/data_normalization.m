@@ -59,7 +59,7 @@ data_stats.std_X = std_X;   data_stats.std_U = std_U;   data_stats.std_jpos = st
 data_stats.td_scale = 1;
 data_stats.mass = mass_val;
 
-save('data/data_stats.mat', 'data_stats')
+save('data/landing_norm_param.mat', 'data_stats')
 
 % prepare normalization values for export
 
@@ -123,7 +123,7 @@ for data_entry = 1:length(training_data.input)
 
 end
 
-save('data/training_data_normalized_idx.mat', 'training_data_normalized', '-V7.3')
+save('data/training_data_landing_normalized.mat', 'training_data_normalized', '-V7.3')
 
 %% test denormalization
 sample_idx = randi(1000, 1);

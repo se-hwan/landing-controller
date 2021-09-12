@@ -13,7 +13,7 @@ function [X_dn, U_dn, jpos_dn] = data_denormalization(nn_data)
         t_star(k) = t_star(k-1) + dt_val(1,k-1);
     end
 
-    load('data/data_stats.mat', 'data_stats');        % data statistics
+    load('data/landing_norm_param.mat', 'data_stats');        % data statistics
     
     %% parse data
     X_nn      = reshape(nn_data(1:numel(X_tmp)),size(X_tmp));
